@@ -1,0 +1,51 @@
+haven/
+├── src/
+│   ├── components/
+│   │   ├── auth/
+│   │   │   ├── SignIn.tsx
+│   │   │   ├── SignUp.tsx
+│   │   │   └── PasswordReset.tsx
+│   │   ├── layout/
+│   │   │   ├── Navbar.tsx
+│   │   │   └── Footer.tsx
+│   │   ├── room/
+│   │   │   ├── VideoRoom.tsx        # Jitsi video integration
+│   │   │   ├── ParticipantList.tsx  # List of room participants
+│   │   │   ├── Timer.tsx            # Session countdown timer
+│   │   │   ├── RoomScheduler.tsx    # Room listing and joining
+│   │   │   └── RoomControls.tsx     # Video/audio/focus controls
+│   │   ├── ui/                      # ShadCN components
+│   │   │   ├── button.tsx
+│   │   │   ├── card.tsx
+│   │   │   └── icons.tsx
+│   │   └── dashboard/
+│   │       ├── ProgressChart.tsx
+│   │       └── Rewards.tsx
+│   ├── pages/
+│   │   ├── Landing.tsx
+│   │   ├── Auth.tsx
+│   │   ├── Profile.tsx
+│   │   ├── Room.tsx                 # Main room page
+│   │   ├── Rooms.tsx               # Room listing page
+│   │   └── Dashboard.tsx
+│   ├── hooks/
+│   │   ├── useWebSocket.ts         # WebSocket connection hook
+│   │   └── useRoom.ts             # Room state management hook
+│   ├── lib/
+│   │   ├── supabase.ts
+│   │   └── utils.ts
+│   ├── contexts/
+│   │   ├── AuthContext.tsx
+│   │   └── RoomContext.tsx         # Room state context
+│   ├── styles/
+│   │   └── globals.css
+│   ├── types/
+│   │   ├── room.ts                # Room-related types
+│   │   └── index.ts
+│   ├── App.tsx
+│   └── main.tsx
+├── public/
+│   └── assets/
+├── tailwind.config.js
+├── tsconfig.json
+└── package.json
