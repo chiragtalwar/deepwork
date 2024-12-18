@@ -6,13 +6,28 @@ import {
   SunMedium,
   Twitter,
   User,
-  type Icon as LucideIcon,
+  type XIcon as LucideIcon,
+  Sun,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  LogOut,
+  Clock,
+  Target, 
+  Check, 
+  Sunrise, 
+  Camera, 
+  Pencil,
+  Flame,
+  Activity, 
+  Mail
 } from "lucide-react"
 
 export type Icon = LucideIcon
 
 export const Icons = {
-  sun: SunMedium,
+  sun: Sun,
   moon: Moon,
   twitter: Twitter,
   spinner: Loader2,
@@ -37,4 +52,18 @@ export const Icons = {
       </svg>
     )
   ),
+  mic: Mic,
+  micOff: MicOff,
+  video: Video,
+  videoOff: VideoOff,
+  logOut: LogOut,
+  clock: Clock,
+  target: Target, 
+  check: Check, 
+  camera: Camera, 
+  sunrise: Sunrise, 
+  pencil: Pencil, 
+  flame: Flame, 
+  activity: Activity, 
+  mail: Mail
 } 

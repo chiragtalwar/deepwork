@@ -56,6 +56,30 @@ module.exports = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      fontFamily: {
+        display: ['Afacial Neue', 'sans-serif'],
+        sans: ['Inter', 'sans-serif'],
+      },
+      animation: {
+        'gradient': 'gradient 8s ease infinite',
+        'shimmer': 'shimmer 2s linear infinite',
+        'fade-in': 'fadeIn 0.5s ease-out',
+        'fade-in-delay': 'fadeIn 0.5s ease-out 0.2s forwards',
+      },
+      keyframes: {
+        gradient: {
+          '0%, 100%': { opacity: '0.1' },
+          '50%': { opacity: '0.3' },
+        },
+        shimmer: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

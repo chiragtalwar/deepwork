@@ -1,40 +1,48 @@
 ## **Project Overview**
 
-**App Name**: Haven  
-**Purpose**: Haven is a web app designed to foster productivity by allowing users to join virtual deep work sessions. The app incorporates serene aesthetics, video conferencing, session scheduling, progress tracking, and a reward system to create an immersive and delightful experience.
+**App Name**: Focuso.club  
+**Purpose**: Focuso.club is an exclusive productivity community where ambitious professionals and students come together for focused deep work sessions. Our platform combines the accountability of group work with the power of focused isolation, creating an environment where members can achieve peak productivity.
 
 ---
 
 ## **App Functionality Overview**
 
 ### **1. Landing Page**
-- First interaction for users; visually appealing and calming.
-- Includes Call-to-Actions (CTAs) for signing up and signing in.
-- Responsive for desktop, tablet, and mobile.
+- Premium, club-like aesthetic with emphasis on exclusivity and community
+- Hero section showcasing active focus rooms and live member count
+- Social proof section featuring member testimonials and productivity statistics
+- Clear CTAs for joining the club ("Join the Club" and "Sign In")
 
 ### **2. Authorization**
-- Google OAuth and email/password-based sign-up/sign-in.
-- Secure session management using JWT.
-- Password recovery option via email.
+- Email/password and Google OAuth sign-up/sign-in
+- Optional waitlist system for creating exclusivity
+- Member referral system with special perks
 
 ### **3. Profile Creation**
-- Minimal information collection (Name, Profile Picture, Time Zone).
-- Onboarding flow to introduce app features after profile creation.
+- Professional profile setup (Name, Role/Occupation, Profile Picture)
+- Focus preferences (preferred session duration, work categories)
+- Optional LinkedIn integration
+- Time zone selection for session scheduling
 
-### **4. Deep Work Sessions**
-- Scheduled rooms (1-hour and 30-minute durations) available every hour.
-- Maximum of 5 participants per room.
-- Real-time video conferencing.
-- Room timer and participant list visible.
-- Post-session logs for progress tracking.
+### **4. Focus Rooms**
+- Themed rooms (Deep Work, Creative Flow, Study Hall)
+- 25, 50, or 90-minute Focused Sessions
+- Maximum of 5 members per room for intimate atmosphere
+- Real-time video with optional "Focus Mode" (video off, status only)
+- Room timer with Pomodoro-style breaks
+- Quiet ambient background sounds (optional)
 
 ### **5. Progress Analytics**
-- Dashboard with interactive graphs and insights.
-- Streak visualization and milestone tracking.
-- Session details (date, duration, participants) logged and displayed.
+- Personal Focus Dashboard
+- Weekly and monthly focus streaks
+- Focus leaderboard among club members
+- Detailed session insights and productivity patterns
 
-### **6. Reward System**
-- Badges, points, and unlockable themes based on productivity milestones.
+### **6. Club Perks**
+- Member levels (Novice, Regular, Elite, Master)
+- Exclusive focus techniques and productivity resources
+- Custom room backgrounds and ambient sounds
+- Monthly focus challenges with rewards
 
 ---
 

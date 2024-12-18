@@ -1,4 +1,3 @@
-import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Icons } from '../ui/icons'
 
@@ -14,9 +13,9 @@ export function ParticipantList() {
   ];
 
   return (
-    <Card>
+    <Card className="backdrop-blur-md bg-white/[0.08] border border-white/[0.08]">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-white/90">
           <Icons.user className="h-5 w-5" />
           Participants ({participants.length}/5)
         </CardTitle>
@@ -26,13 +25,13 @@ export function ParticipantList() {
           {participants.map((participant) => (
             <div
               key={participant.id}
-              className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
+              className="flex items-center justify-between p-2 rounded-lg bg-white/[0.03] border border-white/[0.03]"
             >
-              <span>{participant.name}</span>
+              <span className="text-white/80">{participant.name}</span>
               {participant.isFocused ? (
-                <Icons.user className="h-4 w-4 text-green-500" />
+                <Icons.user className="h-4 w-4 text-green-400" />
               ) : (
-                <Icons.user className="h-4 w-4 text-yellow-500" />
+                <Icons.user className="h-4 w-4 text-yellow-400" />
               )}
             </div>
           ))}

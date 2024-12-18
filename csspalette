@@ -1,0 +1,39 @@
+/* CSS HEX */
+ --iron: #dfe4e3;
+--bali-hai: #7da1b0;
+--blue-bayoux: #517181;
+--tower-gray: #abbbc4;
+--cotton-seed: #bfb9b7;
+--zorba: #a19a96;
+--sandstone: #71675f;
+--bronco: #b0a69a;
+--ash: #c8c4bb;
+--makara: #80766a;
+
+
+/* SCSS HEX */
+$iron: #dfe4e3;
+$bali-hai: #7da1b0;
+$blue-bayoux: #517181;
+$tower-gray: #abbbc4;
+$cotton-seed: #bfb9b7;
+$zorba: #a19a96;
+$sandstone: #71675f;
+$bronco: #b0a69a;
+$ash: #c8c4bb;
+$makara: #80766a;
+
+
+/* SCSS RGB */
+--iron: rgba(223,228,227,1);
+--bali-hai: rgba(125,161,176,1);
+--blue-bayoux: rgba(81,113,129,1);
+--tower-gray: rgba(171,187,196,1);
+--cotton-seed: rgba(191,185,183,1);
+--zorba: rgba(161,154,150,1);
+--sandstone: rgba(113,103,95,1);
+--bronco: rgba(176,166,154,1);
+--ash: rgba(200,196,187,1);
+--makara: rgba(128,118,106,1);
+
+

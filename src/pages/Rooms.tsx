@@ -1,40 +1,87 @@
-import React from 'react'
+import React, { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { RoomScheduler } from '../components/room/RoomScheduler'
 import { Icons } from '../components/ui/icons'
+import { Button } from '../components/ui/button'
 import type { RoomFilter } from '../types/room'
 
 export default function Rooms() {
+  const navigate = useNavigate();
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Deep Work Sessions</h1>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Icons.user className="h-5 w-5" />
-          <span>Maximum 5 participants per room</span>
-        </div>
+    <div className="min-h-screen relative">
+      {/* Background with overlay */}
+      <div 
+        className="fixed inset-0 z-0"
+        style={{ 
+          backgroundImage: 'url("/assets/pic7.png")',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-[#517181]/90 to-[#517181]/75" />
       </div>
 
-      <Tabs defaultValue="upcoming" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="upcoming">Upcoming Sessions</TabsTrigger>
-          <TabsTrigger value="hour">1 Hour Sessions</TabsTrigger>
-          <TabsTrigger value="half">30 Minute Sessions</TabsTrigger>
-        </TabsList>
+      {/* Main Content */}
+      <div className="relative container mx-auto px-4 mt-24 pb-20">
+        <Button
+          onClick={() => navigate('/test-room')}
+          className="fixed bottom-6 right-6 bg-emerald-500/20 hover:bg-emerald-500/30 backdrop-blur-sm z-50 
+            border border-white/10 shadow-lg"
+          size="lg"
+        >
+          <Icons.video className="mr-2 h-4 w-4" />
+          Test Video Room
+        </Button>
 
-        <TabsContent value="upcoming" className="space-y-4">
-          <RoomScheduler filter="upcoming" />
-        </TabsContent>
+        <Tabs 
+          defaultValue="upcoming" 
+          className="max-w-2xl mx-auto"
+        >
+          <TabsList className="w-full backdrop-blur-sm bg-white/[0.03] p-1.5 rounded-xl mb-2">
+            <TabsTrigger 
+              value="upcoming"
+              className="w-1/3 py-3 rounded-lg text-sm font-light transition-all
+                data-[state=active]:bg-white/10 data-[state=active]:text-white/90 
+                text-white/60"
+            >
+              Upcoming Sessions
+            </TabsTrigger>
+            <TabsTrigger 
+              value="hour"
+              className="w-1/3 py-3 rounded-lg text-sm font-light transition-all
+                data-[state=active]:bg-white/10 data-[state=active]:text-white/90 
+                text-white/60"
+            >
+              1 Hour Focus
+            </TabsTrigger>
+            <TabsTrigger 
+              value="half"
+              className="w-1/3 py-3 rounded-lg text-sm font-light transition-all
+                data-[state=active]:bg-white/10 data-[state=active]:text-white/90 
+                text-white/60"
+            >
+              30 Min Sprint
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="hour" className="space-y-4">
-          <RoomScheduler filter="hour" />
-        </TabsContent>
+          <div className="space-y-6"> {/* Increased gap between rooms */}
+            <TabsContent value="upcoming">
+              <RoomScheduler filter="upcoming" />
+            </TabsContent>
 
-        <TabsContent value="half" className="space-y-4">
-          <RoomScheduler filter="half" />
-        </TabsContent>
-      </Tabs>
+            <TabsContent value="hour">
+              <RoomScheduler filter="hour" />
+            </TabsContent>
+
+            <TabsContent value="half">
+              <RoomScheduler filter="half" />
+            </TabsContent>
+          </div>
+        </Tabs>
+      </div>
     </div>
-  )
+  );
 } 

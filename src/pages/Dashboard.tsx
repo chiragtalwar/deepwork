@@ -1,4 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Icons } from '../components/ui/icons';
+import { Progress } from '../components/ui/progress';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -18,24 +20,25 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchUserSessions();
+    const fetchSessions = async () => {
+      try {
+        setIsLoading(true);
+        const { data, error } = await supabase
+          .from('sessions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setSessions(data || []);
+      } catch (error) {
+        console.error('Error fetching sessions:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSessions();
   }, []);
-
-  const fetchUserSessions = async () => {
-    try {
-      const { data: sessionData, error } = await supabase
-        .from('sessions')
-        .select('*')
-        .order('start_time', { ascending: false });
-
-      if (error) throw error;
-      setSessions(sessionData || []);
-    } catch (error) {
-      console.error('Error fetching sessions:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const calculateWeeklyFocusTime = () => {
     const now = new Date();
@@ -109,105 +112,161 @@ export default function Dashboard() {
   const weeklyHours = Math.round(calculateWeeklyFocusTime() / 3600); // Convert seconds to hours
   const currentStreak = calculateStreak();
 
+  const calculateWeeklyProgress = () => {
+    const weeklyGoal = 10; // 10 hours per week goal
+    const progress = (weeklyHours / weeklyGoal) * 100;
+    return Math.min(progress, 100);
+  };
+
+  const getStreakMessage = (streak: number) => {
+    if (streak === 0) return "Start your streak today!";
+    if (streak < 3) return "You're building momentum!";
+    if (streak < 7) return "You're on fire! 🔥";
+    return "Unstoppable! 🚀";
+  };
+
   if (isLoading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795]">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/10 animate-gradient" />
+        <div className="relative container mx-auto px-4 py-8 pt-24">
+          <div className="flex items-center justify-center h-[60vh]">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white/40" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Your Progress</h1>
-      <div className="grid gap-6 md:grid-cols-3 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Focus Time</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p className="text-3xl font-bold">{weeklyHours} Hours</p>
-              <p className="text-sm text-muted-foreground">This week</p>
-            </div>
-          </CardContent>
-        </Card>
+    <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795]">
+      <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/10 animate-gradient" />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Current Streak</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p className="text-3xl font-bold">{currentStreak} Days</p>
-              <p className="text-sm text-muted-foreground">Keep it up!</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="relative container mx-auto px-4 py-8 pt-24">
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Sessions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p className="text-3xl font-bold">{sessions.length}</p>
-              <p className="text-sm text-muted-foreground">All time</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="md:col-span-3 mb-6">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Deep Work Contributions</CardTitle>
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <div className="flex items-center">
-              Less
-              <div className="flex gap-1 ml-2">
-                <div className="w-3 h-3 rounded-sm bg-gray-100" />
-                <div className="w-3 h-3 rounded-sm bg-purple-200" />
-                <div className="w-3 h-3 rounded-sm bg-purple-400" />
-                <div className="w-3 h-3 rounded-sm bg-purple-600" />
-              </div>
-              More
-            </div>
+        <div className="flex items-center justify-between mb-12">
+          <div className="relative">
+            <h1 className="text-6xl font-light tracking-tight text-white mb-3 animate-fade-in">
+              Your Progress
+            </h1>
+            <p className="text-white/80 text-xl font-light animate-fade-in-delay">
+              Track your deep work journey
+            </p>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <div className="inline-flex flex-col gap-3">
-              <div className="flex text-sm text-muted-foreground justify-between px-2">
-                <span>Mon</span>
-                <span>Wed</span>
-                <span>Fri</span>
+          <div className="px-6 py-3 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/15 transition-all duration-300">
+            <span className="text-white/80 text-sm font-medium">
+              Last updated: {new Date().toLocaleDateString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-3 mb-8">
+          <div className="group relative overflow-hidden rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-3 mb-4">
+                <Icons.clock className="h-5 w-5 text-white/90" />
+                <span className="text-white/90 text-lg font-medium">Focus Time</span>
               </div>
-              <div className="flex gap-1">
-                {Array.from({ length: 52 }).map((_, week) => (
-                  <div key={week} className="flex flex-col gap-1">
-                    {Array.from({ length: 7 }).map((_, day) => {
-                      const dataIndex = week * 7 + day;
-                      const dayData = contributionData[dataIndex];
-                      return (
-                        <div
-                          key={day}
-                          className={`w-3 h-3 rounded-sm transition-colors hover:ring-2 hover:ring-offset-2 hover:ring-purple-400 ${getContributionColor(
-                            dayData?.sessions || 0
-                          )}`}
-                          title={`${dayData?.date}: ${dayData?.sessions || 0} sessions`}
-                        />
-                      );
-                    })}
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-5xl font-light text-white">
+                    {weeklyHours}h
+                    <span className="text-base text-white/60 ml-2">this week</span>
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-white/70">Weekly Goal: 10h</span>
+                    <span className="text-white/90">{calculateWeeklyProgress()}%</span>
                   </div>
-                ))}
+                  <div className="relative h-2 bg-black/20 rounded-full overflow-hidden">
+                    <div 
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-white/40 to-white/60 rounded-full transition-all duration-700 ease-out"
+                      style={{ width: `${calculateWeeklyProgress()}%` }}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Weekly Focus Hours</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <div className="group relative overflow-hidden rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-3 mb-4">
+                <Icons.flame className="h-5 w-5 text-orange-400" />
+                <span className="text-white/90 text-lg font-medium">Current Streak</span>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-5xl font-light text-white">{currentStreak}</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+                  <p className="text-white/70 text-sm">
+                    {getStreakMessage(currentStreak)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="group relative overflow-hidden rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-3 mb-4">
+                <Icons.target className="h-5 w-5 text-emerald-400" />
+                <span className="text-white/90 text-lg font-medium">Total Sessions</span>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-5xl font-light text-white">{sessions.length}</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                  <p className="text-white/70 text-sm">Lifetime focus sessions</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 p-6 mb-8 overflow-x-auto">
+          <h2 className="text-2xl font-light text-white mb-6 flex items-center gap-3">
+            <Icons.activity className="h-5 w-5 text-white/90" />
+            Deep Work Contributions
+          </h2>
+          <div className="min-w-[800px]">
+            <div className="flex text-sm text-white/60 justify-between px-2 mb-2">
+              <span>Mon</span>
+              <span>Wed</span>
+              <span>Fri</span>
+            </div>
+            <div className="grid grid-flow-col gap-1">
+              {Array.from({ length: 52 }).map((_, week) => (
+                <div key={week} className="grid grid-rows-7 gap-1">
+                  {Array.from({ length: 7 }).map((_, day) => {
+                    const dataIndex = week * 7 + day;
+                    const dayData = contributionData[dataIndex];
+                    return (
+                      <div
+                        key={day}
+                        className={`w-3 h-3 rounded-sm transition-colors hover:ring-2 hover:ring-offset-1 hover:ring-white/30 ${getContributionColor(
+                          dayData?.sessions || 0
+                        )}`}
+                        title={`${dayData?.date}: ${dayData?.sessions || 0} sessions`}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-8">
+            <h2 className="text-2xl font-light text-white mb-6">Weekly Focus Hours</h2>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={contributionData.slice(-7)}>
@@ -230,19 +289,15 @@ export default function Dashboard() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Session Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-8">
+            <h2 className="text-2xl font-light text-white mb-6">Session Distribution</h2>
             <div className="h-[300px] flex items-center justify-center">
               <p className="text-muted-foreground">Coming soon...</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
