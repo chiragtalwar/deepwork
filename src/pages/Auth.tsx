@@ -129,13 +129,13 @@ export default function Auth() {
       const { data } = await signInWithGoogle();
       
       if (data?.url) {
+        // Redirect to Google OAuth
         window.location.href = data.url;
-      } else {
-        throw new Error('No redirect URL provided');
       }
     } catch (err) {
       console.error('Google Auth error:', err);
       setError('Failed to connect with Google. Please try again.');
+    } finally {
       setIsGoogleLoading(false);
     }
   };

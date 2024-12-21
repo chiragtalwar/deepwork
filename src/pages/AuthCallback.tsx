@@ -2,36 +2,37 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Icons } from '@/components/ui/icons';
-import { useAuth } from '@/contexts/AuthContext';
-
+    
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
+        // Get hash parameters from URL
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        
+        if (!accessToken) {
+          throw new Error('No access token found');
+        }
+
+        // Exchange the token for a session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
-        
-        console.log('Session status:', { 
-          exists: !!session, 
-          user: session?.user?.email 
-        });
 
         if (!session?.user) {
           throw new Error('No session found');
         }
 
-        // Wait for auth context to update
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Log success
+        console.log('Auth success:', {
+          user: session.user.email,
+          token: accessToken?.substring(0, 10) + '...'
+        });
 
-        // Check if user exists in context
-        if (user) {
-          navigate('/rooms', { replace: true });
-        } else {
-          throw new Error('User context not initialized');
-        }
+        // Navigate to rooms
+        navigate('/rooms', { replace: true });
       } catch (error) {
         console.error('Auth callback error:', error);
         navigate('/auth?error=callback_failed');
@@ -39,7 +40,7 @@ export default function AuthCallback() {
     };
 
     handleCallback();
-  }, [navigate, user]);
+  }, [navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">

@@ -10,7 +10,7 @@ interface AuthContextType {
   isLoading: boolean
   signInWithEmail: (email: string, password: string) => Promise<{ data: any; error: null }>
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ data: any; error: null }>
-  signInWithGoogle: () => Promise<void>
+  signInWithGoogle: () => Promise<{ data: { provider: OAuthProvider; url: string } }>
   signOut: () => Promise<void>
 }
 
@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
@@ -119,14 +119,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       })
+      
       if (error) throw error
+      
+      // Check if we have a URL to redirect to
+      if (!data?.url) {
+        throw new Error('No redirect URL provided')
+      }
+
+      // Return the data for the component to handle
+      return { data }
     } catch (error) {
       console.error('Google sign in error:', error)
-      toast({
-        variant: "destructive",
-        title: "Authentication failed",
-        description: "Could not sign in with Google. Please try again."
-      })
+      throw error // Let the component handle the error
     }
   }
 
