@@ -24,8 +24,12 @@ export default function Dashboard() {
   const fetchSessions = async () => {
     if (!user) return;
     
-    try {
+    const isRefresh = sessions.length > 0;
+    if (!isRefresh) {
       setIsLoading(true);
+    }
+    
+    try {
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
@@ -45,7 +49,7 @@ export default function Dashboard() {
     let mounted = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && mounted) {
         fetchSessions();
       }
     };

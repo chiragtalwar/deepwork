@@ -43,9 +43,12 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const [processingRoomId, setProcessingRoomId] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
-  const fetchRooms = async () => {
+  const fetchRooms = async (showLoading = false) => {
     try {
-      setIsLoading(true);
+      if (showLoading) {
+        setIsLoading(true);
+      }
+      
       const data = await roomService.getUpcomingRooms(filter as any);
       setRooms(data);
     } finally {
@@ -82,19 +85,20 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   };
 
   useEffect(() => {
-    fetchRooms();
-    setupRealtimeSubscription();
+    let mounted = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchRooms();
-        setupRealtimeSubscription();
+      if (document.visibilityState === 'visible' && mounted) {
+        fetchRooms(false);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    fetchRooms(true);
+    setupRealtimeSubscription();
 
     return () => {
+      mounted = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       channelRef.current?.unsubscribe();
     };
