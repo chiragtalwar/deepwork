@@ -2,22 +2,16 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Icons } from '@/components/ui/icons';
-    
+import { useAuth } from '@/contexts/AuthContext';
+
 export default function AuthCallback() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Get hash parameters from URL
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        
-        if (!accessToken) {
-          throw new Error('No access token found');
-        }
-
-        // Exchange the token for a session
+        // Get the current session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
 
@@ -27,12 +21,18 @@ export default function AuthCallback() {
 
         // Log success
         console.log('Auth success:', {
-          user: session.user.email,
-          token: accessToken?.substring(0, 10) + '...'
+          user: session.user.email
         });
 
-        // Navigate to rooms
-        navigate('/rooms', { replace: true });
+        // Wait for auth state to update
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Check if we have a user in context
+        if (session.user) {
+          navigate('/rooms', { replace: true });
+        } else {
+          throw new Error('User context not initialized');
+        }
       } catch (error) {
         console.error('Auth callback error:', error);
         navigate('/auth?error=callback_failed');
