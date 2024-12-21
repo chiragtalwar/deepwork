@@ -48,21 +48,12 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const fetchRooms = async () => {
     if (!mounted.current) return;
     
-    // Only show loading on first fetch
-    if (!rooms.length) {
-      await withLoading(async () => {
-        const data = await roomService.getUpcomingRooms(filter as any);
-        if (mounted.current && data) {
-          setRooms(data);
-        }
-      });
-    } else {
-      // Silent refresh
+    await withLoading(async () => {
       const data = await roomService.getUpcomingRooms(filter as any);
       if (mounted.current && data) {
         setRooms(data);
       }
-    }
+    }, !rooms.length);
   };
 
   const setupRealtimeSubscription = () => {

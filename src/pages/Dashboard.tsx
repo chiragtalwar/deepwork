@@ -26,30 +26,18 @@ export default function Dashboard() {
   const fetchSessions = async () => {
     if (!user || !mounted.current) return;
     
-    if (!sessions.length) {
-      await withLoading(async () => {
-        const { data, error } = await supabase
-          .from('sessions')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        if (mounted.current && data) {
-          setSessions(data);
-        }
-      });
-    } else {
+    await withLoading(async () => {
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (!error && mounted.current && data) {
+      if (error) throw error;
+      if (mounted.current && data) {
         setSessions(data);
       }
-    }
+    }, !sessions.length);
   };
 
   useEffect(() => {

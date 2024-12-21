@@ -1,14 +1,28 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export function useLoadingState(initialState = false) {
   const [isLoading, setIsLoading] = useState(initialState);
-  
-  const withLoading = useCallback(async (fn: () => Promise<void>) => {
+  const hasInitialDataRef = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const withLoading = useCallback(async (fn: () => Promise<void>, showLoading = true) => {
     try {
-      setIsLoading(true);
+      if (showLoading && !hasInitialDataRef.current && mounted.current) {
+        setIsLoading(true);
+      }
       await fn();
+      hasInitialDataRef.current = true;
     } finally {
-      setIsLoading(false);
+      if (mounted.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 

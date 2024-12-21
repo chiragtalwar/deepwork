@@ -252,50 +252,30 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const fetchParticipants = async () => {
     if (!mountedRef.current) return;
     
-    // Only show loading on first fetch
-    if (!participants.length) {
-      await withLoading(async () => {
-        const { data: roomParticipants, error: roomError } = await supabase
-          .from('room_participants')
-          .select('user_id')
-          .eq('room_id', roomId);
-
-        if (roomError || !mountedRef.current) return;
-
-        if (!roomParticipants?.length) {
-          if (mountedRef.current) {
-            setParticipants([]);
-          }
-          return;
-        }
-
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', roomParticipants.map(p => p.user_id));
-
-        if (!profilesError && mountedRef.current && profiles) {
-          setParticipants(profiles);
-        }
-      });
-    } else {
-      // Silent refresh
+    await withLoading(async () => {
       const { data: roomParticipants, error: roomError } = await supabase
         .from('room_participants')
         .select('user_id')
         .eq('room_id', roomId);
 
-      if (!roomError && roomParticipants) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', roomParticipants.map(p => p.user_id));
+      if (roomError || !mountedRef.current) return;
 
-        if (mountedRef.current && profiles) {
-          setParticipants(profiles);
+      if (!roomParticipants?.length) {
+        if (mountedRef.current) {
+          setParticipants([]);
         }
+        return;
       }
-    }
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', roomParticipants.map(p => p.user_id));
+
+      if (!profilesError && mountedRef.current && profiles) {
+        setParticipants(profiles);
+      }
+    }, !participants.length);
   };
 
   useEffect(() => {
