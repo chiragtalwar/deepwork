@@ -9,6 +9,7 @@ import { FocusTimer } from './FocusTimer';
 import { ParticipantCard } from './ParticipantCard';
 import { FocusProgress } from './FocusProgress';
 import { supabase } from '../../lib/supabase';
+import { useLoadingState } from '../../hooks/useLoadingState';
 
 interface VideoRoomProps {
   roomId: string;
@@ -49,7 +50,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const [sessionStartTime] = useState(new Date());
   const [currentUserTask, setCurrentUserTask] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { isLoading, withLoading } = useLoadingState();
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -251,40 +252,48 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const fetchParticipants = async () => {
     if (!mountedRef.current) return;
     
-    try {
-      // Only show loading on initial fetch
-      if (!participants.length && mountedRef.current) {
-        setIsLoading(true);
-      }
+    // Only show loading on first fetch
+    if (!participants.length) {
+      await withLoading(async () => {
+        const { data: roomParticipants, error: roomError } = await supabase
+          .from('room_participants')
+          .select('user_id')
+          .eq('room_id', roomId);
 
+        if (roomError || !mountedRef.current) return;
+
+        if (!roomParticipants?.length) {
+          if (mountedRef.current) {
+            setParticipants([]);
+          }
+          return;
+        }
+
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', roomParticipants.map(p => p.user_id));
+
+        if (!profilesError && mountedRef.current && profiles) {
+          setParticipants(profiles);
+        }
+      });
+    } else {
+      // Silent refresh
       const { data: roomParticipants, error: roomError } = await supabase
         .from('room_participants')
         .select('user_id')
         .eq('room_id', roomId);
 
-      if (roomError || !mountedRef.current) return;
+      if (!roomError && roomParticipants) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', roomParticipants.map(p => p.user_id));
 
-      if (!roomParticipants?.length) {
-        if (mountedRef.current) {
-          setParticipants([]);
+        if (mountedRef.current && profiles) {
+          setParticipants(profiles);
         }
-        return;
-      }
-
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', roomParticipants.map(p => p.user_id));
-
-      if (profilesError || !mountedRef.current) return;
-      if (profiles && mountedRef.current) {
-        setParticipants(profiles);
-      }
-    } catch (error) {
-      console.error('Error fetching participants:', error);
-    } finally {
-      if (mountedRef.current) {
-        setIsLoading(false);
       }
     }
   };

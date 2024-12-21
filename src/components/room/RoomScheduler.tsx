@@ -8,6 +8,7 @@ import { roomService } from '../../lib/services/roomService';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../ui/use-toast';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { useLoadingState } from '../../hooks/useLoadingState';
 
 interface Room {
   id: string;
@@ -37,7 +38,7 @@ interface RoomSchedulerProps {
 
 export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { isLoading, withLoading } = useLoadingState();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [processingRoomId, setProcessingRoomId] = useState<string | null>(null);
@@ -47,21 +48,19 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const fetchRooms = async () => {
     if (!mounted.current) return;
     
-    try {
-      // Only show loading on initial fetch
-      if (!rooms.length && mounted.current) {
-        setIsLoading(true);
-      }
-      
+    // Only show loading on first fetch
+    if (!rooms.length) {
+      await withLoading(async () => {
+        const data = await roomService.getUpcomingRooms(filter as any);
+        if (mounted.current && data) {
+          setRooms(data);
+        }
+      });
+    } else {
+      // Silent refresh
       const data = await roomService.getUpcomingRooms(filter as any);
       if (mounted.current && data) {
         setRooms(data);
-      }
-    } catch (error) {
-      console.error('Error fetching rooms:', error);
-    } finally {
-      if (mounted.current) {
-        setIsLoading(false);
       }
     }
   };

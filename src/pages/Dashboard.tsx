@@ -5,6 +5,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { useLoadingState } from '../hooks/useLoadingState';
 
 interface Session {
   id: string;
@@ -18,33 +19,35 @@ interface Session {
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { isLoading, withLoading } = useLoadingState();
   const { user } = useAuth();
   const mounted = useRef(true);
 
   const fetchSessions = async () => {
     if (!user || !mounted.current) return;
     
-    try {
-      if (!sessions.length && mounted.current) {
-        setIsLoading(true);
-      }
+    if (!sessions.length) {
+      await withLoading(async () => {
+        const { data, error } = await supabase
+          .from('sessions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
 
+        if (error) throw error;
+        if (mounted.current && data) {
+          setSessions(data);
+        }
+      });
+    } else {
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      if (mounted.current && data) {
+      if (!error && mounted.current && data) {
         setSessions(data);
-      }
-    } catch (error) {
-      console.error('Error fetching sessions:', error);
-    } finally {
-      if (mounted.current) {
-        setIsLoading(false);
       }
     }
   };
