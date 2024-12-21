@@ -9,34 +9,23 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Get the hash fragment from the URL
-        const hashFragment = window.location.hash;
-        
-        if (hashFragment) {
-          // Exchange the access token for a session
-          const { data: { session }, error } = await supabase.auth.setSession({
-            access_token: hashFragment.split('access_token=')[1].split('&')[0],
-            refresh_token: hashFragment.split('refresh_token=')[1].split('&')[0],
-          });
+        // First try to exchange the auth code
+        const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(
+          window.location.search
+        );
 
-          if (error) throw error;
-
-          if (session?.user) {
-            console.log('Auth success, redirecting to rooms...');
-            navigate('/rooms', { replace: true });
-            return;
-          }
+        if (error) {
+          console.error('Code exchange error:', error);
+          throw error;
         }
-
-        // Fallback to getting current session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
 
         if (session?.user) {
+          console.log('Auth success:', session.user.email);
           navigate('/rooms', { replace: true });
-        } else {
-          throw new Error('No session found');
+          return;
         }
+
+        throw new Error('No session found');
       } catch (error) {
         console.error('Auth callback error:', error);
         navigate('/auth?error=callback_failed');
