@@ -1,11 +1,11 @@
 /** @type {import('tailwindcss').Config} */
-const config = {
+import animate from "tailwindcss-animate"
+
+export default {
   darkMode: ["class"],
   content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     container: {
@@ -83,8 +83,4 @@ const config = {
     },
   },
   plugins: [require("tailwindcss-animate")],
-}
-
-// Handle both ESM and CommonJS
-export default config
-module.exports = config 
+} 
