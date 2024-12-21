@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { roomService } from '../../lib/services/roomService';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../ui/use-toast';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface Room {
   id: string;

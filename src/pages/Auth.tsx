@@ -157,6 +157,28 @@ export default function Auth() {
     navigate('/auth?mode=signin');
   };
 
+  if (isLoading) {
+    return (
+      <div 
+        className="min-h-screen relative flex items-center justify-center"
+        style={{ 
+          backgroundImage: 'url("/assets/pic7.png")',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        {/* Background overlay */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#517181]/90 to-[#517181]/75" />
+        
+        {/* Loading content */}
+        <div className="relative flex flex-col items-center gap-4">
+          <Icons.spinner className="h-8 w-8 animate-spin text-white/60" />
+          <p className="text-white/80 text-sm">Completing your sign in...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen relative">
       {/* Background with overlay */}
