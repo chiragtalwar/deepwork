@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
@@ -6,9 +6,30 @@ import { RoomScheduler } from '../components/room/RoomScheduler'
 import { Icons } from '../components/ui/icons'
 import { Button } from '../components/ui/button'
 import type { RoomFilter } from '../types/room'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function Rooms() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // If you need to refresh any data when tab becomes visible
+        // Add fetch calls here
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      mounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen relative">

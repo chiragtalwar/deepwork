@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -6,56 +6,85 @@ import { Label } from '../components/ui/label';
 import { Icons } from '../components/ui/icons';
 import { supabase } from '../lib/supabase';
 import { useToast } from "../components/ui/use-toast";
-import { useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = React.useState(false);
+  const { user, loading: authLoading } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
   const [profileImage, setProfileImage] = React.useState<File | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [formData, setFormData] = React.useState({
     name: '',
     timezone: '',
-    focusGoal: '2', // hours per day
+    focusGoal: '2',
     preferredFocusTime: 'morning',
     bio: '',
   });
   const { toast } = useToast();
-  const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
-    async function fetchProfile() {
+    let mounted = true;
+    
+    const fetchProfile = async () => {
+      if (!user || !mounted) return;
+      
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
+        setIsLoading(true);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
 
-          if (error) throw error;
-          if (data) {
-            setFormData({
-              name: data.name || '',
-              timezone: data.timezone || '',
-              focusGoal: data.focus_goal || '2',
-              preferredFocusTime: data.preferred_focus_time || 'morning',
-              bio: data.bio || '',
-            });
-          }
+        if (error || !mounted) return;
+        if (data) {
+          setFormData({
+            name: data.name || '',
+            timezone: data.timezone || '',
+            focusGoal: data.focus_goal?.toString() || '2',
+            preferredFocusTime: data.preferred_focus_time || 'morning',
+            bio: data.bio || '',
+          });
         }
       } catch (error) {
         console.error('Error fetching profile:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load profile data',
-          variant: 'destructive',
-        });
+        if (mounted) {
+          toast({
+            title: 'Error',
+            description: 'Failed to load profile data',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
       }
-    }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchProfile();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     fetchProfile();
-  }, []);
+
+    return () => {
+      mounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795] flex items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin text-white/60" />
+      </div>
+    );
+  }
 
   async function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -66,9 +95,9 @@ export default function Profile() {
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    setIsLoading(true);
-
+    
     try {
+      setIsLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
@@ -81,7 +110,7 @@ export default function Profile() {
           .upload(fileName, profileImage);
 
         if (uploadError) throw uploadError;
-        profileImageUrl = data?.path || null;
+        profileImageUrl = data.path;
       }
 
       const { error: updateError } = await supabase
@@ -90,11 +119,11 @@ export default function Profile() {
           id: user.id,
           name: formData.name,
           timezone: formData.timezone,
-          profile_picture: profileImageUrl,
-          updated_at: new Date().toISOString(),
-          focus_goal: formData.focusGoal,
+          focus_goal: parseInt(formData.focusGoal),
           preferred_focus_time: formData.preferredFocusTime,
           bio: formData.bio,
+          ...(profileImageUrl && { profile_picture: profileImageUrl }),
+          updated_at: new Date().toISOString(),
         });
 
       if (updateError) throw updateError;
@@ -103,13 +132,11 @@ export default function Profile() {
         title: 'Success',
         description: 'Profile updated successfully',
       });
-      
-      navigate('/dashboard');
     } catch (error) {
       console.error('Error updating profile:', error);
       toast({
         title: 'Error',
-        description: 'Failed to update profile',
+        description: error instanceof Error ? error.message : 'Failed to update profile',
         variant: 'destructive',
       });
     } finally {

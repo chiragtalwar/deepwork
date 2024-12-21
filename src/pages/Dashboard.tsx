@@ -4,6 +4,7 @@ import { Progress } from '../components/ui/progress';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 interface Session {
   id: string;
@@ -18,27 +19,45 @@ interface Session {
 export default function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+
+  const fetchSessions = async () => {
+    if (!user) return;
+    
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSessions(data || []);
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        setIsLoading(true);
-        const { data, error } = await supabase
-          .from('sessions')
-          .select('*')
-          .order('created_at', { ascending: false });
+    let mounted = true;
 
-        if (error) throw error;
-        setSessions(data || []);
-      } catch (error) {
-        console.error('Error fetching sessions:', error);
-      } finally {
-        setIsLoading(false);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSessions();
       }
     };
 
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     fetchSessions();
-  }, []);
+
+    return () => {
+      mounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
 
   const calculateWeeklyFocusTime = () => {
     const now = new Date();

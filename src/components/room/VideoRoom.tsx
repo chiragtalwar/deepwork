@@ -248,41 +248,52 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const fetchParticipants = async () => {
-      // First get the room participants
-      const { data: roomParticipants, error: roomError } = await supabase
-        .from('room_participants')
-        .select('user_id')
-        .eq('room_id', roomId);
+      if (!mounted) return;
+      
+      try {
+        const { data: roomParticipants, error: roomError } = await supabase
+          .from('room_participants')
+          .select('user_id')
+          .eq('room_id', roomId);
 
-      if (roomError) {
-        console.error('Error fetching room participants:', roomError);
-        return;
-      }
+        if (roomError || !mounted) return;
 
-      if (!roomParticipants?.length) {
-        setParticipants([]);
-        return;
-      }
+        if (!roomParticipants?.length) {
+          setParticipants([]);
+          return;
+        }
 
-      // Then get the profile details for those participants
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', roomParticipants.map(p => p.user_id));
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', roomParticipants.map(p => p.user_id));
 
-      if (profilesError) {
-        console.error('Error fetching participant profiles:', profilesError);
-        return;
-      }
-
-      if (profiles) {
-        setParticipants(profiles);
+        if (profilesError || !mounted) return;
+        if (profiles) {
+          setParticipants(profiles);
+        }
+      } catch (error) {
+        console.error('Error fetching participants:', error);
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchParticipants();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     fetchParticipants();
-  }, []);
+
+    return () => {
+      mounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [roomId]);
 
   return (
     <div className="min-h-screen bg-[#0a0f1a]">
