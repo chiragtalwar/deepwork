@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Icons } from '../components/ui/icons';
 import { Progress } from '../components/ui/progress';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 
@@ -20,16 +20,19 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
+  const mounted = useRef(true);
 
   const fetchSessions = async () => {
     if (!user) return;
     
-    const isRefresh = sessions.length > 0;
-    if (!isRefresh) {
-      setIsLoading(true);
-    }
+    // Don't show loading if we already have data
+    const shouldShowLoading = sessions.length === 0;
     
     try {
+      if (shouldShowLoading && mounted.current) {
+        setIsLoading(true);
+      }
+
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
@@ -37,19 +40,23 @@ export default function Dashboard() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSessions(data || []);
+      if (mounted.current && data) {
+        setSessions(data);
+      }
     } catch (error) {
       console.error('Error fetching sessions:', error);
     } finally {
-      setIsLoading(false);
+      if (mounted.current && shouldShowLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    let mounted = true;
+    mounted.current = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mounted) {
+      if (document.visibilityState === 'visible' && mounted.current) {
         fetchSessions();
       }
     };
@@ -58,7 +65,7 @@ export default function Dashboard() {
     fetchSessions();
 
     return () => {
-      mounted = false;
+      mounted.current = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user]);

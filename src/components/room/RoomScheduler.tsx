@@ -42,17 +42,27 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const { user } = useAuth();
   const [processingRoomId, setProcessingRoomId] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const mounted = useRef(true);
 
-  const fetchRooms = async (showLoading = false) => {
+  const fetchRooms = async () => {
+    // Don't show loading if we already have data
+    const shouldShowLoading = rooms.length === 0;
+    
     try {
-      if (showLoading) {
+      if (shouldShowLoading && mounted.current) {
         setIsLoading(true);
       }
       
       const data = await roomService.getUpcomingRooms(filter as any);
-      setRooms(data);
+      if (mounted.current && data) {
+        setRooms(data);
+      }
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
     } finally {
-      setIsLoading(false);
+      if (mounted.current && shouldShowLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -85,20 +95,20 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   };
 
   useEffect(() => {
-    let mounted = true;
+    mounted.current = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mounted) {
-        fetchRooms(false);
+      if (document.visibilityState === 'visible' && mounted.current) {
+        fetchRooms();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    fetchRooms(true);
+    fetchRooms();
     setupRealtimeSubscription();
 
     return () => {
-      mounted = false;
+      mounted.current = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       channelRef.current?.unsubscribe();
     };

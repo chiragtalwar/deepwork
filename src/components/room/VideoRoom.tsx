@@ -49,6 +49,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const [sessionStartTime] = useState(new Date());
   const [currentUserTask, setCurrentUserTask] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -247,41 +248,54 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     );
   };
 
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchParticipants = async () => {
-      if (!mounted) return;
-      
-      try {
-        const { data: roomParticipants, error: roomError } = await supabase
-          .from('room_participants')
-          .select('user_id')
-          .eq('room_id', roomId);
-
-        if (roomError || !mounted) return;
-
-        if (!roomParticipants?.length) {
-          setParticipants([]);
-          return;
-        }
-
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', roomParticipants.map(p => p.user_id));
-
-        if (profilesError || !mounted) return;
-        if (profiles) {
-          setParticipants(profiles);
-        }
-      } catch (error) {
-        console.error('Error fetching participants:', error);
+  const fetchParticipants = async () => {
+    if (!mountedRef.current) return;
+    
+    // Don't show loading if we already have data
+    const shouldShowLoading = participants.length === 0;
+    
+    try {
+      if (shouldShowLoading && mountedRef.current) {
+        setIsLoading(true);
       }
-    };
+
+      const { data: roomParticipants, error: roomError } = await supabase
+        .from('room_participants')
+        .select('user_id')
+        .eq('room_id', roomId);
+
+      if (roomError || !mountedRef.current) return;
+
+      if (!roomParticipants?.length) {
+        if (mountedRef.current) {
+          setParticipants([]);
+        }
+        return;
+      }
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', roomParticipants.map(p => p.user_id));
+
+      if (profilesError || !mountedRef.current) return;
+      if (profiles && mountedRef.current) {
+        setParticipants(profiles);
+      }
+    } catch (error) {
+      console.error('Error fetching participants:', error);
+    } finally {
+      if (mountedRef.current && shouldShowLoading) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && mountedRef.current) {
         fetchParticipants();
       }
     };
@@ -290,7 +304,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     fetchParticipants();
 
     return () => {
-      mounted = false;
+      mountedRef.current = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [roomId]);
