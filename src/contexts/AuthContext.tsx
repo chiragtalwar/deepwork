@@ -10,7 +10,7 @@ interface AuthContextType {
   isLoading: boolean
   signInWithEmail: (email: string, password: string) => Promise<{ data: any; error: null }>
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ data: any; error: null }>
-  signInWithGoogle: () => Promise<{ data: any }>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: 'https://focuso.club/rooms',
@@ -119,8 +119,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       })
+      if (error) throw error
     } catch (error) {
-      console.error('Error:', error)
+      console.error('Google sign in error:', error)
+      toast({
+        variant: "destructive",
+        title: "Authentication failed",
+        description: "Could not sign in with Google. Please try again."
+      })
     }
   }
 
