@@ -1,1 +1,15 @@
-{"projectId":"prj_8xuHllnowe9SaZoLykmcLLPi3wGz","orgId":"team_jXFPj2BmMEXPtT1xiKHmUx16"}
+{
+  "projectId": "prj_8xuHllnowe9SaZoLykmcLLPi3wGz",
+  "orgId": "team_jXFPj2BmMEXPtT1xiKHmUx16",
+  "settings": {
+    "createdAt": 1734801341642,
+    "framework": "vite",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "22.x"
+  }
+}
