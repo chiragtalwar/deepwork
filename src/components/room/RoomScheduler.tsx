@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { roomService } from '../../lib/services/roomService';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../ui/use-toast';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface Room {
   id: string;
@@ -30,7 +31,11 @@ interface Room {
   }[];
 }
 
-export function RoomScheduler({ filter }: { filter: string }) {
+interface RoomSchedulerProps {
+  filter?: string;
+}
+
+export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();

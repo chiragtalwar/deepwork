@@ -21,10 +21,11 @@ import {
   Pencil,
   Flame,
   Activity, 
-  Mail
+  Mail,
+  Trophy
 } from "lucide-react"
 
-export type Icon = LucideIcon
+export type Icon = typeof LucideIcon;
 
 export const Icons = {
   sun: Sun,
@@ -65,5 +66,6 @@ export const Icons = {
   pencil: Pencil, 
   flame: Flame, 
   activity: Activity, 
-  mail: Mail
+  mail: Mail,
+  trophy: Trophy
 } 
