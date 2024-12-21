@@ -2,24 +2,15 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Icons } from '@/components/ui/icons';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Parse URL for errors
-        const params = new URLSearchParams(window.location.search);
-        const errorCode = params.get('error_code');
-        const errorDesc = params.get('error_description');
-
-        if (errorCode || errorDesc) {
-          console.error('Auth Error:', { errorCode, errorDesc });
-          throw new Error(errorDesc || 'Authentication failed');
-        }
-
-        // Get session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
         
@@ -32,8 +23,15 @@ export default function AuthCallback() {
           throw new Error('No session found');
         }
 
-        // Redirect to rooms
-        navigate('/rooms', { replace: true });
+        // Wait for auth context to update
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Check if user exists in context
+        if (user) {
+          navigate('/rooms', { replace: true });
+        } else {
+          throw new Error('User context not initialized');
+        }
       } catch (error) {
         console.error('Auth callback error:', error);
         navigate('/auth?error=callback_failed');
@@ -41,7 +39,7 @@ export default function AuthCallback() {
     };
 
     handleCallback();
-  }, [navigate]);
+  }, [navigate, user]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">
