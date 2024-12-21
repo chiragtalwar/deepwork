@@ -1,7 +1,7 @@
 import { supabase } from '../supabase';
 
-export interface Room {
-  id: string;
+interface RoomData {
+  name: string;
   start_time: string;
   duration: number;
   max_participants: number;
@@ -9,19 +9,15 @@ export interface Room {
   current_participants: number;
 }
 
+export interface Room extends RoomData {
+  id: string;
+}
+
 export const roomService = {
-  async createRoom(startTime: Date, duration: number) {
+  async createRoom(roomData: RoomData) {
     const { data, error } = await supabase
       .from('rooms')
-      .insert({
-        start_time: startTime.toISOString(),
-        duration,
-        max_participants: 5,
-        active: true,
-        current_participants: 0,
-      })
-      .select()
-      .single();
+      .insert([roomData] as RoomData[]);
 
     if (error) throw error;
     return data;
@@ -93,30 +89,17 @@ export const roomService = {
 
   async createInitialRooms() {
     const now = new Date();
-    const rooms = [];
+    const rooms: RoomData[] = [];
 
     // Create rooms for the next 5 hours
     for (let i = 0; i < 5; i++) {
       const startTime = new Date(now);
       startTime.setHours(now.getHours() + i, 0, 0, 0);
       
-      // Add a 1-hour session
       rooms.push({
         name: `Focus Room ${i + 1}`,
         start_time: startTime.toISOString(),
         duration: 3600,
-        max_participants: 5,
-        active: true,
-        current_participants: 0
-      });
-
-      // Add a 30-minute session
-      const halfHourTime = new Date(startTime);
-      halfHourTime.setMinutes(30);
-      rooms.push({
-        name: `Quick Focus ${i + 1}`,
-        start_time: halfHourTime.toISOString(),
-        duration: 1800,
         max_participants: 5,
         active: true,
         current_participants: 0
@@ -163,5 +146,15 @@ export const roomService = {
       .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
 
     if (error) throw error;
+  },
+
+  async updateRoom(id: string, roomData: RoomData) {
+    const { data, error } = await supabase
+      .from('rooms')
+      .update(roomData)
+      .eq('id', id);
+
+    if (error) throw error;
+    return data;
   }
 }; 

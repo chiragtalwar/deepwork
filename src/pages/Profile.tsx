@@ -6,6 +6,7 @@ import { Label } from '../components/ui/label';
 import { Icons } from '../components/ui/icons';
 import { supabase } from '../lib/supabase';
 import { useToast } from "../components/ui/use-toast";
+import { useState } from 'react';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function Profile() {
     bio: '',
   });
   const { toast } = useToast();
+  const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
     async function fetchProfile() {
@@ -70,7 +72,7 @@ export default function Profile() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
-      let profileImageUrl = null;
+      let profileImageUrl: string | null = null;
       if (profileImage) {
         const fileExt = profileImage.name.split('.').pop();
         const fileName = `${user.id}-${Math.random()}.${fileExt}`;
@@ -79,7 +81,7 @@ export default function Profile() {
           .upload(fileName, profileImage);
 
         if (uploadError) throw uploadError;
-        profileImageUrl = data.path;
+        profileImageUrl = data?.path || null;
       }
 
       const { error: updateError } = await supabase

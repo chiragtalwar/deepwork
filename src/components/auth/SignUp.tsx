@@ -26,7 +26,7 @@ export function SignUp() {
     setError('')
 
     try {
-      await signUpWithEmail(email, password)
+      await signUpWithEmail(email, password, fullName)
       // Changed from /dashboard to /rooms
       navigate('/rooms')
     } catch (err) {
