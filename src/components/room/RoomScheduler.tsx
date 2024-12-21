@@ -37,7 +37,7 @@ interface RoomSchedulerProps {
 
 export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
   const [processingRoomId, setProcessingRoomId] = useState<string | null>(null);
@@ -45,11 +45,11 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const mounted = useRef(true);
 
   const fetchRooms = async () => {
-    // Don't show loading if we already have data
-    const shouldShowLoading = rooms.length === 0;
+    if (!mounted.current) return;
     
     try {
-      if (shouldShowLoading && mounted.current) {
+      // Only show loading on initial fetch
+      if (!rooms.length && mounted.current) {
         setIsLoading(true);
       }
       
@@ -60,7 +60,7 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
     } catch (error) {
       console.error('Error fetching rooms:', error);
     } finally {
-      if (mounted.current && shouldShowLoading) {
+      if (mounted.current) {
         setIsLoading(false);
       }
     }

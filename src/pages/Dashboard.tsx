@@ -18,18 +18,15 @@ interface Session {
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const mounted = useRef(true);
 
   const fetchSessions = async () => {
-    if (!user) return;
-    
-    // Don't show loading if we already have data
-    const shouldShowLoading = sessions.length === 0;
+    if (!user || !mounted.current) return;
     
     try {
-      if (shouldShowLoading && mounted.current) {
+      if (!sessions.length && mounted.current) {
         setIsLoading(true);
       }
 
@@ -46,7 +43,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Error fetching sessions:', error);
     } finally {
-      if (mounted.current && shouldShowLoading) {
+      if (mounted.current) {
         setIsLoading(false);
       }
     }

@@ -49,7 +49,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const [sessionStartTime] = useState(new Date());
   const [currentUserTask, setCurrentUserTask] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -251,11 +251,9 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const fetchParticipants = async () => {
     if (!mountedRef.current) return;
     
-    // Don't show loading if we already have data
-    const shouldShowLoading = participants.length === 0;
-    
     try {
-      if (shouldShowLoading && mountedRef.current) {
+      // Only show loading on initial fetch
+      if (!participants.length && mountedRef.current) {
         setIsLoading(true);
       }
 
@@ -285,7 +283,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     } catch (error) {
       console.error('Error fetching participants:', error);
     } finally {
-      if (mountedRef.current && shouldShowLoading) {
+      if (mountedRef.current) {
         setIsLoading(false);
       }
     }
