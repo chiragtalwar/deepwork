@@ -9,16 +9,30 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Exchange the token for a session
+        // Get the hash fragment from the URL
+        const hashFragment = window.location.hash;
+        
+        if (hashFragment) {
+          // Exchange the access token for a session
+          const { data: { session }, error } = await supabase.auth.setSession({
+            access_token: hashFragment.split('access_token=')[1].split('&')[0],
+            refresh_token: hashFragment.split('refresh_token=')[1].split('&')[0],
+          });
+
+          if (error) throw error;
+
+          if (session?.user) {
+            console.log('Auth success, redirecting to rooms...');
+            navigate('/rooms', { replace: true });
+            return;
+          }
+        }
+
+        // Fallback to getting current session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
 
-        // Wait briefly for auth state to sync
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Check session and redirect
         if (session?.user) {
-          console.log('Auth success, redirecting to rooms...');
           navigate('/rooms', { replace: true });
         } else {
           throw new Error('No session found');
@@ -29,7 +43,6 @@ export default function AuthCallback() {
       }
     };
 
-    // Execute immediately
     handleCallback();
   }, [navigate]);
 
