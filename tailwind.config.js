@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-export default {
+const config = {
   darkMode: ["class"],
   content: [
     './pages/**/*.{ts,tsx}',
@@ -83,4 +83,8 @@ export default {
     },
   },
   plugins: [require("tailwindcss-animate")],
-} 
+}
+
+// Handle both ESM and CommonJS
+export default config
+module.exports = config 
