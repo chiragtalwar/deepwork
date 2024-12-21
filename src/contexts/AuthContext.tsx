@@ -10,7 +10,7 @@ interface AuthContextType {
   isLoading: boolean
   signInWithEmail: (email: string, password: string) => Promise<{ data: any; error: null }>
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ data: any; error: null }>
-  signInWithGoogle: () => Promise<{ data: { provider: OAuthProvider; url: string } }>
+  signInWithGoogle: () => Promise<{ data: { url: string } }>
   signOut: () => Promise<void>
 }
 
@@ -93,47 +93,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUpWithEmail = async (email: string, password: string, fullName: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
-      },
-    });
+      });
 
-    if (error) throw error;
-    return { data, error };
+      if (error) throw error;
+
+      // Check if email confirmation is required
+      if (data?.user?.identities?.length === 0) {
+        toast({
+          title: "Check your email",
+          description: "We've sent you a verification link to complete your registration.",
+        });
+      }
+
+      return { data, error };
+    } catch (error) {
+      console.error('Sign up error:', error);
+      throw error;
+    }
   };
 
   const signInWithGoogle = async () => {
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          }
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
         }
-      })
-      
-      if (error) throw error
-      
-      // Check if we have a URL to redirect to
-      if (!data?.url) {
-        throw new Error('No redirect URL provided')
       }
-
-      // Return the data for the component to handle
-      return { data }
-    } catch (error) {
-      console.error('Google sign in error:', error)
-      throw error // Let the component handle the error
-    }
-  }
+    });
+    
+    if (error) throw error;
+    return { data };
+  };
 
   const signOut = async () => {
     try {
