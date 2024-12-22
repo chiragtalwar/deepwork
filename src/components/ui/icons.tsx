@@ -22,7 +22,8 @@ import {
   Flame,
   Activity, 
   Mail,
-  Trophy
+  Trophy, 
+  TestTube
 } from "lucide-react"
 
 export type Icon = typeof LucideIcon;
@@ -67,5 +68,6 @@ export const Icons = {
   flame: Flame, 
   activity: Activity, 
   mail: Mail,
-  trophy: Trophy
+  trophy: Trophy, 
+  testTube: TestTube
 } 

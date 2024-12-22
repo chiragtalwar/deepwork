@@ -6,6 +6,8 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLoadingState } from '../hooks/useLoadingState';
+import { Button } from '../components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
 interface Session {
   id: string;
@@ -22,6 +24,7 @@ export default function Dashboard() {
   const { isLoading, withLoading, hasInitialData } = useLoadingState();
   const { user } = useAuth();
   const mounted = useRef(true);
+  const navigate = useNavigate();
 
   const fetchSessions = async () => {
     if (!user || !mounted.current) return;
@@ -317,6 +320,16 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <Button
+        onClick={() => navigate('/loading-test')}
+        className="fixed bottom-6 right-6 bg-purple-500/20 hover:bg-purple-500/30 backdrop-blur-sm z-50 
+          border border-white/10 shadow-lg"
+        size="lg"
+      >
+        <Icons.testTube className="mr-2 h-4 w-4" />
+        Test Loading States
+      </Button>
     </div>
   );
 }

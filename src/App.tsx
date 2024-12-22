@@ -17,6 +17,7 @@ import Dashboard from './pages/Dashboard'
 import Rooms from './pages/Rooms'
 import { Room } from './pages/Room'
 import Profile from './pages/Profile'
+import LoadingTest from './pages/LoadingTest';
 
 function App() {
   return (
@@ -45,6 +46,9 @@ function App() {
 
                 {/* Catch all route */}
                 <Route path="*" element={<Navigate to="/" replace />} />
+
+                {/* Add this to your routes */}
+                <Route path="/loading-test" element={<LoadingTest />} />
               </Routes>
             </main>
             <Toaster />
