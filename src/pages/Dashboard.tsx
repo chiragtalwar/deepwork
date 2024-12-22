@@ -342,7 +342,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <Button
+      {/* <Button
         onClick={() => navigate('/loading-test')}
         className="fixed bottom-6 right-6 bg-purple-500/20 hover:bg-purple-500/30 backdrop-blur-sm z-50 
           border border-white/10 shadow-lg"
@@ -350,7 +350,7 @@ export default function Dashboard() {
       >
         <Icons.testTube className="mr-2 h-4 w-4" />
         Test Loading States
-      </Button>
+      </Button> */}
     </div>
   );
 }
