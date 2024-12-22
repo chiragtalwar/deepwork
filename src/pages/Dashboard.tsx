@@ -19,7 +19,7 @@ interface Session {
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const { isLoading, withLoading } = useLoadingState();
+  const { isLoading, withLoading, hasInitialData } = useLoadingState();
   const { user } = useAuth();
   const mounted = useRef(true);
 
@@ -37,14 +37,14 @@ export default function Dashboard() {
       if (mounted.current && data) {
         setSessions(data);
       }
-    }, !sessions.length);
+    }, !hasInitialData());
   };
 
   useEffect(() => {
     mounted.current = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mounted.current) {
+      if (document.visibilityState === 'visible' && mounted.current && !isLoading) {
         fetchSessions();
       }
     };

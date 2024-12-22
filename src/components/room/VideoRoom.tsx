@@ -50,7 +50,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const [sessionStartTime] = useState(new Date());
   const [currentUserTask, setCurrentUserTask] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const { isLoading, withLoading } = useLoadingState();
+  const { isLoading, withLoading, hasInitialData } = useLoadingState();
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -275,14 +275,14 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
       if (!profilesError && mountedRef.current && profiles) {
         setParticipants(profiles);
       }
-    }, !participants.length);
+    }, !hasInitialData());
   };
 
   useEffect(() => {
     mountedRef.current = true;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mountedRef.current) {
+      if (document.visibilityState === 'visible' && mountedRef.current && !isLoading) {
         fetchParticipants();
       }
     };

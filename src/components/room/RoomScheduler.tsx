@@ -38,7 +38,7 @@ interface RoomSchedulerProps {
 
 export function RoomScheduler({ filter }: RoomSchedulerProps) {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const { isLoading, withLoading } = useLoadingState();
+  const { isLoading, withLoading, hasInitialData } = useLoadingState();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [processingRoomId, setProcessingRoomId] = useState<string | null>(null);
@@ -53,32 +53,32 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
       if (mounted.current && data) {
         setRooms(data);
       }
-    }, !rooms.length);
+    }, !hasInitialData());
   };
 
   const setupRealtimeSubscription = () => {
-    // Clean up existing subscription
     if (channelRef.current) {
       channelRef.current.unsubscribe();
     }
 
-    // Create new subscription
     channelRef.current = supabase
       .channel('room-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'room_participants' },
         () => {
-          console.log('Participants changed, refreshing...');
-          fetchRooms();
+          if (!isLoading) {
+            fetchRooms();
+          }
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'room_waitlist' },
         () => {
-          console.log('Waitlist changed, refreshing...');
-          fetchRooms();
+          if (!isLoading) {
+            fetchRooms();
+          }
         }
       )
       .subscribe();
