@@ -126,7 +126,12 @@ export default function Auth() {
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleLoading(true);
-      const { data } = await signInWithGoogle();
+      const { data } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
       
       if (data?.url) {
         window.location.href = data.url;

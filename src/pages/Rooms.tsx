@@ -47,15 +47,7 @@ export default function Rooms() {
 
       {/* Main Content */}
       <div className="relative container mx-auto px-4 mt-24 pb-20">
-        <Button
-          onClick={() => navigate('/test-room')}
-          className="fixed bottom-6 right-6 bg-emerald-500/20 hover:bg-emerald-500/30 backdrop-blur-sm z-50 
-            border border-white/10 shadow-lg"
-          size="lg"
-        >
-          <Icons.video className="mr-2 h-4 w-4" />
-          Test Video Room
-        </Button>
+        
 
         <Tabs 
           defaultValue="upcoming" 
@@ -76,7 +68,7 @@ export default function Rooms() {
                 data-[state=active]:bg-white/10 data-[state=active]:text-white/90 
                 text-white/60"
             >
-              1 Hour Focus
+              Focus: 50 Minutes
             </TabsTrigger>
             <TabsTrigger 
               value="half"
@@ -84,7 +76,7 @@ export default function Rooms() {
                 data-[state=active]:bg-white/10 data-[state=active]:text-white/90 
                 text-white/60"
             >
-              30 Min Sprint
+             Sprint: 25 Minutes
             </TabsTrigger>
           </TabsList>
 

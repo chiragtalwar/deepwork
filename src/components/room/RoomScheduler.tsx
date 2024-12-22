@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Icons } from '../ui/icons';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
-import { roomService } from '../../lib/services/roomService';
+import { roomService, ROOM_CONFIG } from '../../lib/services/roomService';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../ui/use-toast';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -30,6 +30,8 @@ interface Room {
       full_name?: string;
     };
   }[];
+  theme: string;
+  room_type: string;
 }
 
 interface RoomSchedulerProps {
@@ -50,7 +52,16 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
     
     await withLoading(async () => {
       const data = await roomService.getUpcomingRooms(filter as any);
-      if (mounted.current && data) {
+      
+      // If no rooms exist, initialize them
+      if (!data || data.length === 0) {
+        console.log('No rooms found, initializing...');
+        await roomService.initializeUpcomingRooms();
+        const newData = await roomService.getUpcomingRooms(filter as any);
+        if (mounted.current) {
+          setRooms(newData || []);
+        }
+      } else if (mounted.current) {
         setRooms(data);
       }
     }, !hasInitialData());
@@ -161,6 +172,16 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
 
   const handleRoomAction = async (roomId: string, status: string, isReserved: boolean) => {
     try {
+      // Check if user is authenticated first
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to reserve a spot or join a session.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       setProcessingRoomId(roomId);
       
       if (status === 'joinable') {
@@ -314,54 +335,81 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
         const isReserved = isInWaitlist(room);
         
         return (
-          <div key={room.id} className="group bg-white/10 hover:bg-white/15 backdrop-blur-md 
-            rounded-2xl p-6 transition-all duration-300 border border-white/10 hover:border-white/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h3 className="text-3xl font-light text-white/90">
-                    {format(new Date(room.start_time), 'h:mm a')}
-                  </h3>
-                  <span className={`text-lg font-light px-3 py-0.5 rounded-full 
-                    ${timeInfo.isStarting 
-                      ? 'bg-emerald-400/20 text-emerald-300' 
-                      : 'bg-white/10 text-white/60'
-                    }`}
-                  >
-                    {timeInfo.text}
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-4 mt-2 mb-4">
-                  <div className="flex items-center gap-2">
-                    <Icons.user className="h-4 w-4 text-white/60" />
-                    <span className="font-light text-white/60">{room.current_participants}/{room.max_participants} Members</span>
-                  </div>
-                  <div className="w-px h-4 bg-white/10" />
-                  <div className="flex items-center gap-2 text-white/60">
-                    <Icons.clock className="h-4 w-4 text-white/60" />
-                    <span className="font-light text-white/60">{room.duration / 60} Minutes</span>
-                  </div>
+          <div key={room.id} 
+            className="group bg-white/10 hover:bg-white/15 backdrop-blur-lg 
+              rounded-2xl p-6 transition-all duration-300 border border-white/20 
+              hover:border-white/30 shadow-lg hover:shadow-xl">
+            {/* Main Content */}
+            <div className="flex justify-between items-start">
+              {/* Left Side */}
+              <div className="flex gap-4">
+                {/* Theme Icon & Info */}
+                <div className={`p-3.5 rounded-xl ${
+                  room.theme === 'DEEP_WORK' ? 'bg-blue-500/20 text-blue-200' :
+                  room.theme === 'CREATIVE_FLOW' ? 'bg-purple-500/20 text-purple-200' :
+                  'bg-emerald-500/20 text-emerald-200'
+                }`}>
+                  <Icons.brain className="h-6 w-6" />
                 </div>
 
-                {status === 'waitlist' && room.room_waitlist && (
-                  <div className="flex items-center gap-2 text-white/60">
-                    <Icons.clock className="h-4 w-4" />
-                    <span className="font-light">
-                      {room.room_waitlist.length} in waitlist
-                    </span>
+                {/* Session Info */}
+                <div>
+                  <h3 className="text-2xl font-medium text-white mb-1">
+                    {ROOM_CONFIG.themes[room.theme].name}
+                  </h3>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-3 text-base">
+                      <span className="text-white/70 font-medium">
+                        {room.duration} min {room.room_type === 'FOCUS' ? 'Focus' : 'Sprint'}
+                      </span>
+                      <span className="text-white/40">•</span>
+                      <span className="text-white/70">
+                        {room.current_participants}/{room.max_participants} joined
+                      </span>
+                      {room.room_waitlist && room.room_waitlist.length > 0 && (
+                        <>
+                          <span className="text-white/40">•</span>
+                          <span className="text-white/70">
+                            {room.room_waitlist.length} in waitlist
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <p className={`text-sm ${
+                      room.theme === 'DEEP_WORK' ? 'text-blue-200/70' :
+                      room.theme === 'CREATIVE_FLOW' ? 'text-purple-200/70' :
+                      'text-emerald-200/70'
+                    }`}>
+                      {room.theme === 'DEEP_WORK' && "Distraction-free zone for deep concentration"}
+                      {room.theme === 'CREATIVE_FLOW' && "Perfect space for creative thinking & brainstorming"}
+                      {room.theme === 'STUDY_HALL' && "Quiet environment for focused learning"}
+                    </p>
                   </div>
-                )}
+                </div>
               </div>
-              
-              {getRoomButton(room, status)}
+
+              {/* Right Side */}
+              <div className="text-right">
+                <div className="text-2xl font-medium text-white mb-1">
+                  {format(new Date(room.start_time), 'h:mm a')}
+                </div>
+                <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium
+                  ${timeInfo.isStarting 
+                    ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-500/30' 
+                    : 'bg-white/10 text-white/70'}`}>
+                  {timeInfo.text}
+                </div>
+              </div>
             </div>
 
-            {/* Participant + Waitlist Avatars */}
-            <div className="flex items-center gap-4">
-              <div className="flex -space-x-2">
+            {/* Bottom Section */}
+            <div className="mt-6 flex items-center justify-between">
+              {/* Participants */}
+              <div className="flex -space-x-3">
                 {room.participants?.map((p) => (
-                  <div key={p.id} className="w-8 h-8 rounded-full border-2 border-white/10 overflow-hidden">
+                  <div key={p.id} 
+                    className="w-8 h-8 rounded-full ring-2 ring-white/10 overflow-hidden
+                      hover:z-10 transition-all duration-300 hover:ring-white/30">
                     {p.avatar_url ? (
                       <img 
                         src={p.avatar_url} 
@@ -369,44 +417,32 @@ export function RoomScheduler({ filter }: RoomSchedulerProps) {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full bg-white/10 flex items-center justify-center text-white/60">
-                        {(p.full_name ?? 'U')[0]}
+                      <div className="w-full h-full bg-white/10 flex items-center justify-center">
+                        <span className="text-white/70 text-sm font-medium">
+                          {(p.full_name ?? 'U')[0]}
+                        </span>
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-              
-              {status === 'waitlist' && room.room_waitlist && room.room_waitlist.length > 0 && (
-                <>
-                  <div className="w-px h-4 bg-white/10" />
-                  <div className="flex -space-x-2">
-                    {room.room_waitlist.map((p) => (
-                      <div key={p.id} 
-                        className="w-8 h-8 rounded-full border-2 border-white/10 overflow-hidden opacity-60">
-                        {p.profiles?.avatar_url ? (
-                          <img 
-                            src={p.profiles.avatar_url} 
-                            alt={p.profiles.full_name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-white/10 flex items-center justify-center text-white/60">
-                            {(p.profiles?.full_name ?? 'U')[0]}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+
+              {/* Action Button */}
+              <div>
+                {getRoomButton(room, status)}
+              </div>
             </div>
 
             {/* Progress Bar */}
-            <div className="mt-6 bg-white/[0.08] rounded-full h-[2px]">
+            <div className="mt-6 bg-white/10 rounded-full h-1.5 overflow-hidden">
               <div 
-                className={`h-full rounded-full transition-all duration-500
-                  ${timeInfo.isStarting ? 'bg-emerald-400/40' : 'bg-white/30'}`}
+                className={`h-full rounded-full transition-all duration-500 ${
+                  timeInfo.isStarting 
+                    ? 'bg-emerald-400' 
+                    : room.theme === 'DEEP_WORK' ? 'bg-blue-400' :
+                      room.theme === 'CREATIVE_FLOW' ? 'bg-purple-400' :
+                      'bg-emerald-400'
+                }`}
                 style={{ 
                   width: `${(room.current_participants / room.max_participants) * 100}%` 
                 }}

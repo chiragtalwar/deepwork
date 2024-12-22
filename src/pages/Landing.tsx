@@ -7,10 +7,11 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 export default function Landing() {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
+  const baseUrl = import.meta.env.VITE_APP_URL || 'http://localhost:5174';
 
   useEffect(() => {
     if (!isLoading && user) {
-      // If user is already authenticated, redirect to rooms
+      // Use relative path instead of absolute URL
       navigate('/rooms');
     }
   }, [user, isLoading, navigate]);

@@ -10,15 +10,6 @@ export const useAuth = () => {
   useEffect(() => {
     let mounted = true;
 
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted) {
-          setUser(session?.user ?? null);
-        }
-      }
-    };
-
     const initializeAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -34,7 +25,6 @@ export const useAuth = () => {
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -47,7 +37,6 @@ export const useAuth = () => {
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

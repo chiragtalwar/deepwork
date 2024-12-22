@@ -1,46 +1,50 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
-export function useLoadingState(initialState = false) {
-  const [isLoading, setIsLoading] = useState(initialState);
-  const hasInitialDataRef = useRef(false);
-  const mounted = useRef(true);
-  const pendingFetchRef = useRef(false);
+export function useLoadingState() {
+  const [isLoading, setIsLoading] = useState(false);
+  const hasDataRef = useRef(false);
+  const fetchCount = useRef(0);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const withLoading = async (fn: () => Promise<void>, showLoading = true) => {
+    console.log('withLoading started');
+    
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+
+    if (showLoading) {
+      setIsLoading(true);
+    }
+    
+    try {
+      await fn();
+      console.log('withLoading fn completed');
+      hasDataRef.current = true;
+      fetchCount.current += 1;
+    } catch (error) {
+      console.error('Loading error:', error);
+      throw error;
+    } finally {
+      console.log('withLoading finally block');
+      setIsLoading(false);
+    }
+  };
+
+  // Cleanup on unmount
   useEffect(() => {
-    mounted.current = true;
     return () => {
-      mounted.current = false;
-      hasInitialDataRef.current = false;
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
     };
   }, []);
 
-  const withLoading = useCallback(async (fn: () => Promise<void>, showLoading = true) => {
-    if (pendingFetchRef.current) {
-      return;
-    }
+  return {
+    isLoading,
+    withLoading,
+    hasInitialData: () => hasDataRef.current,
+    getFetchCount: () => fetchCount.current
+  };
+}
 
-    pendingFetchRef.current = true;
-    let shouldShowLoading = showLoading && !hasInitialDataRef.current;
-
-    try {
-      if (shouldShowLoading && mounted.current) {
-        setIsLoading(true);
-      }
-
-      await fn();
-      hasInitialDataRef.current = true;
-    } catch (error) {
-      console.error('Loading state error:', error);
-      hasInitialDataRef.current = false;
-    } finally {
-      pendingFetchRef.current = false;
-      if (mounted.current) {
-        setIsLoading(false);
-      }
-    }
-  }, []);
-
-  const hasInitialData = useCallback(() => hasInitialDataRef.current, []);
-
-  return { isLoading, withLoading, hasInitialData };
-} 

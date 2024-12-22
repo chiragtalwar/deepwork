@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Icons } from '../components/ui/icons';
 import { Progress } from '../components/ui/progress';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useLoadingState } from '../hooks/useLoadingState';
@@ -20,16 +20,18 @@ interface Session {
 }
 
 export default function Dashboard() {
+  const { user, loading: authLoading } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
-  const { isLoading, withLoading, hasInitialData } = useLoadingState();
-  const { user } = useAuth();
   const mounted = useRef(true);
+  const fetchInProgress = useRef(false);
   const navigate = useNavigate();
 
-  const fetchSessions = async () => {
-    if (!user || !mounted.current) return;
+  const fetchSessions = useCallback(async (isBackgroundRefresh = false) => {
+    if (!user || !mounted.current || fetchInProgress.current) return;
     
-    await withLoading(async () => {
+    fetchInProgress.current = true;
+    
+    try {
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
@@ -40,26 +42,58 @@ export default function Dashboard() {
       if (mounted.current && data) {
         setSessions(data);
       }
-    }, !hasInitialData());
-  };
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+    } finally {
+      if (mounted.current) {
+        fetchInProgress.current = false;
+      }
+    }
+  }, [user]);
 
+  // Initial load effect
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) return;
+
     mounted.current = true;
+    fetchSessions(false);
+
+    return () => {
+      mounted.current = false;
+    };
+  }, [user, authLoading, fetchSessions]);
+
+  // Visibility change effect
+  useEffect(() => {
+    if (!user) return;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mounted.current && !isLoading) {
-        fetchSessions();
+      if (document.visibilityState === 'visible' && mounted.current) {
+        fetchSessions(true);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    fetchSessions();
-
+    
     return () => {
-      mounted.current = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user]);
+  }, [user, fetchSessions]);
+
+  // Show loading state only during initial auth check
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795]">
+        <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/10" />
+        <div className="relative container mx-auto px-4 py-8 pt-24">
+          <div className="flex items-center justify-center h-[60vh]">
+            <Icons.spinner className="h-8 w-8 animate-spin text-white/60" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const calculateWeeklyFocusTime = () => {
     const now = new Date();
@@ -145,19 +179,6 @@ export default function Dashboard() {
     if (streak < 7) return "You're on fire! 🔥";
     return "Unstoppable! 🚀";
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795]">
-        <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/10 animate-gradient" />
-        <div className="relative container mx-auto px-4 py-8 pt-24">
-          <div className="flex items-center justify-center h-[60vh]">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white/40" />
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795]">
