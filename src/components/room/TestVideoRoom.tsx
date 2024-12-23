@@ -55,39 +55,51 @@ export function TestVideoRoom() {
 
   // Initialize Agora client
   useEffect(() => {
-    // Handle remote user joining
+    // Handle user joined
+    client.on('user-joined', (user) => {
+      addLog(`User ${user.uid} joined`);
+      setRemoteUsers(prev => [...prev, user]);
+    });
+
+    // Handle user published
     client.on('user-published', async (user, mediaType) => {
-      await client.subscribe(user, mediaType);
-      addLog(`Subscribed to ${mediaType} from user: ${user.uid}`);
+      try {
+        await client.subscribe(user, mediaType);
+        addLog(`Subscribed to ${mediaType} from user: ${user.uid}`);
 
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => {
-          if (!prev.find(u => u.uid === user.uid)) {
-            return [...prev, user];
-          }
-          return prev;
-        });
-        
-        // Play remote video after a short delay to ensure DOM is ready
-        setTimeout(() => {
-          if (remoteVideoRefs.current[user.uid]) {
-            user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
-            addLog(`Playing remote video for user: ${user.uid}`);
-          }
-        }, 100);
-      }
+        if (mediaType === 'video') {
+          setRemoteUsers(prev => {
+            if (!prev.find(u => u.uid === user.uid)) {
+              return [...prev, user];
+            }
+            return prev;
+          });
+          
+          setTimeout(() => {
+            if (remoteVideoRefs.current[user.uid]) {
+              user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+              addLog(`Playing remote video for user: ${user.uid}`);
+            }
+          }, 100);
+        }
 
-      if (mediaType === 'audio') {
-        user.audioTrack?.play();
+        if (mediaType === 'audio') {
+          user.audioTrack?.play();
+        }
+      } catch (error) {
+        addLog(`Subscribe error: ${error}`);
       }
     });
 
-    // Handle remote user leaving
+    // Handle user left
+    client.on('user-left', (user) => {
+      addLog(`User ${user.uid} left`);
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    });
+
+    // Handle user unpublished
     client.on('user-unpublished', (user, mediaType) => {
       addLog(`User ${user.uid} unpublished ${mediaType}`);
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-      }
       client.unsubscribe(user);
     });
 
@@ -349,7 +361,7 @@ export function TestVideoRoom() {
             )}
           </div>
 
-          {/* Other Participants */}
+          {/* Remote Videos */}
           {participants
             .filter(p => p.user_id !== user?.id)
             .map(participant => (
@@ -361,13 +373,15 @@ export function TestVideoRoom() {
                 <div className="absolute bottom-4 left-4 text-white/60 text-sm">
                   Participant ({participant.user_id.slice(0, 8)})
                 </div>
-                {!remoteUsers.find(u => u.uid.toString() === participant.user_id) && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  {remoteUsers.find(u => u.uid === participant.user_id) ? (
+                    <p className="text-white">Connecting video...</p>
+                  ) : (
                     <p className="text-white">Camera not available</p>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-          ))}
+            ))}
         </div>
 
         {/* Leave Button */}
