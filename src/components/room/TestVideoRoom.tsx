@@ -63,29 +63,41 @@ export function TestVideoRoom() {
       connectionStateRef.current = curState;
       setIsConnected(curState === 'CONNECTED');
       
-      // Re-sync participants when connection is restored
       if (curState === 'CONNECTED') {
-        void fetchParticipants();
+        // Force sync when connection is established
         void syncRemoteUsers();
+        void fetchParticipants();
       }
     });
 
-    // User joined handler
+    // User joined handler - more aggressive handling
     client.on('user-joined', async (user) => {
       addLog(`User joined: ${user.uid}`);
-      setRemoteUsers(prev => {
-        if (!prev.find(u => u.uid === user.uid)) {
-          return [...prev, user];
+      // Immediately try to subscribe
+      try {
+        if (user.hasVideo) {
+          await client.subscribe(user, 'video');
         }
-        return prev;
-      });
+        if (user.hasAudio) {
+          await client.subscribe(user, 'audio');
+        }
+        
+        setRemoteUsers(prev => {
+          if (!prev.find(u => u.uid === user.uid)) {
+            return [...prev, user];
+          }
+          return prev;
+        });
+      } catch (error) {
+        addLog(`Failed to subscribe to new user: ${error}`);
+      }
     });
 
-    // User published handler with retry logic
+    // More aggressive user-published handler
     client.on('user-published', async (user, mediaType) => {
       addLog(`User ${user.uid} published ${mediaType}`);
       
-      const subscribeWithRetry = async (attempts = 0) => {
+      const handleSubscription = async () => {
         try {
           await client.subscribe(user, mediaType);
           addLog(`Subscribed to ${user.uid}'s ${mediaType}`);
@@ -98,26 +110,37 @@ export function TestVideoRoom() {
               return prev;
             });
 
-            if (remoteVideoRefs.current[user.uid]) {
-              await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
-              addLog(`Playing ${user.uid}'s video`);
-            }
+            // Retry video play if element isn't ready
+            const playVideo = async (attempts = 0) => {
+              if (attempts >= 5) return;
+              
+              if (remoteVideoRefs.current[user.uid]) {
+                try {
+                  await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+                  addLog(`Playing ${user.uid}'s video`);
+                } catch (error) {
+                  addLog(`Video play attempt ${attempts + 1} failed: ${error}`);
+                  setTimeout(() => playVideo(attempts + 1), 500);
+                }
+              } else {
+                setTimeout(() => playVideo(attempts + 1), 500);
+              }
+            };
+            
+            void playVideo();
           }
 
           if (mediaType === 'audio') {
             user.audioTrack?.play();
           }
         } catch (error) {
-          if (attempts < 3) {
-            addLog(`Retry ${attempts + 1} for ${user.uid}'s ${mediaType}`);
-            setTimeout(() => subscribeWithRetry(attempts + 1), 1000);
-          } else {
-            addLog(`Failed to subscribe to ${user.uid}'s ${mediaType}: ${error}`);
-          }
+          addLog(`Subscription error: ${error}`);
+          // Retry subscription
+          setTimeout(handleSubscription, 1000);
         }
       };
 
-      void subscribeWithRetry();
+      void handleSubscription();
     });
 
     // Handle user left
@@ -384,21 +407,32 @@ export function TestVideoRoom() {
       addLog(`Syncing remote users: ${currentRemoteUsers.length} found`);
       
       for (const user of currentRemoteUsers) {
-        if (user.hasVideo) {
-          await client.subscribe(user, 'video');
-          if (remoteVideoRefs.current[user.uid]) {
-            await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+        try {
+          if (user.hasVideo) {
+            await client.subscribe(user, 'video');
+            if (remoteVideoRefs.current[user.uid]) {
+              await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+            }
           }
-        }
-        if (user.hasAudio) {
-          await client.subscribe(user, 'audio');
-          user.audioTrack?.play();
+          if (user.hasAudio) {
+            await client.subscribe(user, 'audio');
+            user.audioTrack?.play();
+          }
+          
+          setRemoteUsers(prev => {
+            if (!prev.find(u => u.uid === user.uid)) {
+              return [...prev, user];
+            }
+            return prev;
+          });
+        } catch (error) {
+          addLog(`Error syncing user ${user.uid}: ${error}`);
+          // Continue with other users even if one fails
+          continue;
         }
       }
-      
-      setRemoteUsers(currentRemoteUsers);
     } catch (error) {
-      addLog(`Error syncing remote users: ${error}`);
+      addLog(`Error in syncRemoteUsers: ${error}`);
     }
   };
 
