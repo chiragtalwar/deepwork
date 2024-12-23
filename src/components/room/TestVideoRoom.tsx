@@ -75,12 +75,24 @@ export function TestVideoRoom() {
             return prev;
           });
           
-          setTimeout(() => {
+          // Try to play video immediately and retry if it fails
+          const playVideo = async (attempts = 0) => {
+            if (attempts > 5) return;
+            
             if (remoteVideoRefs.current[user.uid]) {
-              user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
-              addLog(`Playing remote video for user: ${user.uid}`);
+              try {
+                await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+                addLog(`Playing remote video for user: ${user.uid}`);
+              } catch (error) {
+                addLog(`Retry ${attempts + 1} for video play: ${error}`);
+                setTimeout(() => playVideo(attempts + 1), 1000);
+              }
+            } else {
+              setTimeout(() => playVideo(attempts + 1), 1000);
             }
-          }, 100);
+          };
+          
+          void playVideo();
         }
 
         if (mediaType === 'audio') {
@@ -217,9 +229,21 @@ export function TestVideoRoom() {
     // Initial fetch
     fetchParticipants();
 
-    // Subscribe to ALL changes in room_participants
-    const subscription = supabase
-      .channel(`room:${TEST_ROOM_UUID}`)
+    // Create a single channel for all real-time updates
+    const channel = supabase.channel(`room:${TEST_ROOM_UUID}`);
+
+    // Handle participant changes
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        fetchParticipants();
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        addLog(`New presences: ${JSON.stringify(newPresences)}`);
+        fetchParticipants();
+      })
+      .on('presence', { event: 'leave' }, () => {
+        fetchParticipants();
+      })
       .on('postgres_changes', 
         { 
           event: '*', 
@@ -227,34 +251,56 @@ export function TestVideoRoom() {
           table: 'room_participants',
           filter: `room_id=eq.${TEST_ROOM_UUID}`
         }, 
-        (payload) => {
-          addLog(`Participant change: ${payload.eventType}`);
-          // Immediately fetch latest participants
-          fetchParticipants();
-        }
-      )
-      .subscribe(async (status) => {
-        addLog(`Subscription status: ${status}`);
-        if (status === 'SUBSCRIBED') {
-          // Fetch participants again after successful subscription
+        async (payload) => {
+          addLog(`DB change: ${payload.eventType}`);
           await fetchParticipants();
+          
+          // If it's a new participant, try to reconnect Agora
+          if (payload.eventType === 'INSERT') {
+            await initializeAgoraConnection();
+          }
         }
-      });
+      );
 
-    // Visibility change handler
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchParticipants(); // Refresh when tab becomes visible
+    // Track online presence
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({
+          user_id: user?.id,
+          online_at: new Date().toISOString(),
+        });
       }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    });
 
     return () => {
-      subscription.unsubscribe();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      channel.unsubscribe();
     };
-  }, []);
+  }, [user]);
+
+  // Add this function to handle Agora reconnection
+  const initializeAgoraConnection = async () => {
+    try {
+      // Re-subscribe to all remote users
+      const users = client.remoteUsers;
+      for (const remoteUser of users) {
+        if (!remoteUsers.find(u => u.uid === remoteUser.uid)) {
+          await client.subscribe(remoteUser, 'video');
+          await client.subscribe(remoteUser, 'audio');
+          
+          setRemoteUsers(prev => [...prev, remoteUser]);
+          
+          if (remoteUser.videoTrack && remoteVideoRefs.current[remoteUser.uid]) {
+            remoteUser.videoTrack.play(remoteVideoRefs.current[remoteUser.uid]!);
+          }
+          if (remoteUser.audioTrack) {
+            remoteUser.audioTrack.play();
+          }
+        }
+      }
+    } catch (error) {
+      addLog(`Agora reconnection error: ${error}`);
+    }
+  };
 
   const fetchParticipants = async () => {
     try {
