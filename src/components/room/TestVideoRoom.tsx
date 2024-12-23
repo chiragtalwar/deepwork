@@ -35,6 +35,8 @@ export function TestVideoRoom() {
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [allParticipants, setAllParticipants] = useState<string[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const connectionStateRef = useRef<string>('DISCONNECTED');
 
   // Video refs
   const localVideoRef = useRef<HTMLDivElement>(null);
@@ -55,52 +57,67 @@ export function TestVideoRoom() {
 
   // Initialize Agora client
   useEffect(() => {
-    // Handle user joined
-    client.on('user-joined', (user) => {
-      addLog(`User ${user.uid} joined`);
-      setRemoteUsers(prev => [...prev, user]);
+    // Connection state handling
+    client.on('connection-state-change', (curState, prevState) => {
+      addLog(`Connection state changed from ${prevState} to ${curState}`);
+      connectionStateRef.current = curState;
+      setIsConnected(curState === 'CONNECTED');
+      
+      // Re-sync participants when connection is restored
+      if (curState === 'CONNECTED') {
+        void fetchParticipants();
+        void syncRemoteUsers();
+      }
     });
 
-    // Handle user published
+    // User joined handler
+    client.on('user-joined', async (user) => {
+      addLog(`User joined: ${user.uid}`);
+      setRemoteUsers(prev => {
+        if (!prev.find(u => u.uid === user.uid)) {
+          return [...prev, user];
+        }
+        return prev;
+      });
+    });
+
+    // User published handler with retry logic
     client.on('user-published', async (user, mediaType) => {
-      try {
-        await client.subscribe(user, mediaType);
-        addLog(`Subscribed to ${mediaType} from user: ${user.uid}`);
+      addLog(`User ${user.uid} published ${mediaType}`);
+      
+      const subscribeWithRetry = async (attempts = 0) => {
+        try {
+          await client.subscribe(user, mediaType);
+          addLog(`Subscribed to ${user.uid}'s ${mediaType}`);
 
-        if (mediaType === 'video') {
-          setRemoteUsers(prev => {
-            if (!prev.find(u => u.uid === user.uid)) {
-              return [...prev, user];
-            }
-            return prev;
-          });
-          
-          // Try to play video immediately and retry if it fails
-          const playVideo = async (attempts = 0) => {
-            if (attempts > 5) return;
-            
-            if (remoteVideoRefs.current[user.uid]) {
-              try {
-                await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
-                addLog(`Playing remote video for user: ${user.uid}`);
-              } catch (error) {
-                addLog(`Retry ${attempts + 1} for video play: ${error}`);
-                setTimeout(() => playVideo(attempts + 1), 1000);
+          if (mediaType === 'video') {
+            setRemoteUsers(prev => {
+              if (!prev.find(u => u.uid === user.uid)) {
+                return [...prev, user];
               }
-            } else {
-              setTimeout(() => playVideo(attempts + 1), 1000);
-            }
-          };
-          
-          void playVideo();
-        }
+              return prev;
+            });
 
-        if (mediaType === 'audio') {
-          user.audioTrack?.play();
+            if (remoteVideoRefs.current[user.uid]) {
+              await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+              addLog(`Playing ${user.uid}'s video`);
+            }
+          }
+
+          if (mediaType === 'audio') {
+            user.audioTrack?.play();
+          }
+        } catch (error) {
+          if (attempts < 3) {
+            addLog(`Retry ${attempts + 1} for ${user.uid}'s ${mediaType}`);
+            setTimeout(() => subscribeWithRetry(attempts + 1), 1000);
+          } else {
+            addLog(`Failed to subscribe to ${user.uid}'s ${mediaType}: ${error}`);
+          }
         }
-      } catch (error) {
-        addLog(`Subscribe error: ${error}`);
-      }
+      };
+
+      void subscribeWithRetry();
     });
 
     // Handle user left
@@ -360,6 +377,31 @@ export function TestVideoRoom() {
     navigate('/'); // or wherever you want to redirect after leaving
   };
 
+  // Add function to sync remote users
+  const syncRemoteUsers = async () => {
+    try {
+      const currentRemoteUsers = client.remoteUsers;
+      addLog(`Syncing remote users: ${currentRemoteUsers.length} found`);
+      
+      for (const user of currentRemoteUsers) {
+        if (user.hasVideo) {
+          await client.subscribe(user, 'video');
+          if (remoteVideoRefs.current[user.uid]) {
+            await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+          }
+        }
+        if (user.hasAudio) {
+          await client.subscribe(user, 'audio');
+          user.audioTrack?.play();
+        }
+      }
+      
+      setRemoteUsers(currentRemoteUsers);
+    } catch (error) {
+      addLog(`Error syncing remote users: ${error}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0f1a] p-4 relative">
       <div className="max-w-6xl mx-auto">
@@ -434,9 +476,9 @@ export function TestVideoRoom() {
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2">
           <Button 
             onClick={handleLeaveRoom}
-            variant="destructive"
+            variant="default"
             size="lg"
-            className="flex items-center gap-2 px-8"
+            className="flex items-center gap-2 px-8 bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             <Icons.logOut className="w-4 h-4" />
             Leave Room
