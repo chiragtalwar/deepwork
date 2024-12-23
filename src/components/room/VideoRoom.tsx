@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import AgoraRTC, { ICameraVideoTrack, ILocalTrack, IMicrophoneAudioTrack } from 'agora-rtc-sdk-ng';
+import AgoraRTC, { ICameraVideoTrack, ILocalTrack, IMicrophoneAudioTrack, IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
 import { Card } from '../ui/card';
 import { Icons } from '../ui/icons';
 import { useNavigate } from 'react-router-dom';
@@ -52,6 +52,9 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const { isLoading, withLoading, hasInitialData } = useLoadingState();
 
+  const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
+  const remoteVideoRefs = useRef<{ [uid: string]: HTMLDivElement | null }>({});
+
   useEffect(() => {
     const getCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -82,60 +85,50 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const initializeVideo = async () => {
     try {
       setIsInitializing(true);
-      setError(null);
-
-      // Create client first if needed
-      if (!client.connectionState || client.connectionState === 'DISCONNECTED') {
-        // 1. Join channel first
-        await client.join(
-          import.meta.env.VITE_AGORA_APP_ID!,
-          roomId,
-          null,
-          null
-        );
-      }
+      
+      // 1. Join channel first
+      await client.join(
+        import.meta.env.VITE_AGORA_APP_ID!,
+        roomId,
+        null,
+        null
+      );
+      console.log('Joined channel:', roomId);
 
       // 2. Create tracks
-      const videoTrack = await AgoraRTC.createCameraVideoTrack({
-        encoderConfig: {
-          width: 640,
-          height: 360,
-          frameRate: 15,
-          bitrateMin: 200,
-          bitrateMax: 400,
-        }
-      });
-
-      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        encoderConfig: "speech_low_quality"
-      });
-
-      if (!mountedRef.current) {
-        videoTrack?.close();
-        audioTrack?.close();
-        return;
-      }
+      const [videoTrack, audioTrack] = await Promise.all([
+        AgoraRTC.createCameraVideoTrack({
+          encoderConfig: {
+            width: 640,
+            height: 360,
+            frameRate: 15,
+            bitrateMin: 200,
+            bitrateMax: 400,
+          }
+        }),
+        AgoraRTC.createMicrophoneAudioTrack({
+          encoderConfig: "speech_low_quality"
+        })
+      ]);
 
       // 3. Store tracks
       videoTrackRef.current = videoTrack;
       audioTrackRef.current = audioTrack;
 
-      // 4. Play video locally
-      if (localVideoRef.current && videoTrack) {
-        await videoTrack.play(localVideoRef.current);
-        console.log('Video playing locally');
+      // 4. Play local video
+      if (localVideoRef.current) {
+        videoTrack.play(localVideoRef.current);
+        console.log('Local video playing');
       }
 
       // 5. Publish tracks
-      if (client.connectionState === 'CONNECTED') {
-        await client.publish([videoTrack, audioTrack]);
-        console.log('Tracks published successfully');
-      }
+      await client.publish([videoTrack, audioTrack]);
+      console.log('Tracks published successfully');
 
       setIsInitializing(false);
     } catch (error) {
-      console.error('Failed to initialize:', error);
-      setError('Failed to initialize video. Please check your camera permissions and try again.');
+      console.error('Error initializing video:', error);
+      setError('Failed to initialize video. Please try again.');
       setIsInitializing(false);
     }
   };
@@ -143,16 +136,18 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   const cleanup = async () => {
     console.log('Starting cleanup...');
     try {
-      // 1. Unpublish tracks if connected
-      if (client.connectionState === 'CONNECTED') {
-        const tracks = [
-          videoTrackRef.current,
-          audioTrackRef.current
-        ].filter(track => track !== null);
-        await client.unpublish(tracks);
-      }
+      // Cleanup remote users first
+      remoteUsers.forEach(user => {
+        if (user.videoTrack) {
+          user.videoTrack.stop();
+        }
+        if (user.audioTrack) {
+          user.audioTrack.stop();
+        }
+      });
+      setRemoteUsers([]);
 
-      // 2. Stop and close tracks
+      // Then cleanup local tracks
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
@@ -162,7 +157,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         audioTrackRef.current.close();
       }
 
-      // 3. Leave the channel
+      // Finally leave the channel
       if (client.connectionState === 'CONNECTED') {
         await client.leave();
       }
@@ -222,22 +217,6 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     }
   };
 
-  useEffect(() => {
-    // Set up client event handlers
-    client.on('user-published', async (user, mediaType) => {
-      await client.subscribe(user, mediaType);
-      console.log('Subscribed to user:', user.uid, mediaType);
-    });
-
-    client.on('user-unpublished', async (user, mediaType) => {
-      await client.unsubscribe(user, mediaType);
-      console.log('Unsubscribed from user:', user.uid, mediaType);
-    });
-
-    return () => {
-      client.removeAllListeners();
-    };
-  }, [client]);
 
   const handleTaskUpdate = (newTask: string) => {
     setParticipants(prev => 
@@ -250,20 +229,25 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
   };
 
   const fetchParticipants = async () => {
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || !roomId) return;
     
-    await withLoading(async () => {
+    try {
+      console.log('Fetching participants for room:', roomId);
+      
       const { data: roomParticipants, error: roomError } = await supabase
         .from('room_participants')
         .select('user_id')
         .eq('room_id', roomId);
 
-      if (roomError || !mountedRef.current) return;
+      if (roomError) {
+        console.error('Error fetching room participants:', roomError);
+        return;
+      }
+
+      console.log('Room participants:', roomParticipants);
 
       if (!roomParticipants?.length) {
-        if (mountedRef.current) {
-          setParticipants([]);
-        }
+        setParticipants([]);
         return;
       }
 
@@ -272,10 +256,17 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         .select('*')
         .in('id', roomParticipants.map(p => p.user_id));
 
-      if (!profilesError && mountedRef.current && profiles) {
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        return;
+      }
+
+      if (mountedRef.current && profiles) {
         setParticipants(profiles);
       }
-    }, !hasInitialData());
+    } catch (error) {
+      console.error('Error in fetchParticipants:', error);
+    }
   };
 
   useEffect(() => {
@@ -295,6 +286,136 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [roomId]);
+
+  // Add event handlers for remote users
+  useEffect(() => {
+    if (!client) return;
+
+    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      console.log(`Remote user ${user.uid} published ${mediaType}`);
+      
+      try {
+        // Subscribe to the remote user
+        await client.subscribe(user, mediaType);
+        console.log('Subscribed to remote user:', user.uid);
+
+        if (mediaType === 'video') {
+          setRemoteUsers(prev => {
+            // Check if user already exists
+            if (!prev.find(u => u.uid === user.uid)) {
+              return [...prev, user];
+            }
+            return prev;
+          });
+
+          // Ensure DOM is ready before playing
+          if (remoteVideoRefs.current[user.uid]) {
+            user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+            console.log('Playing remote video for user:', user.uid);
+          }
+        }
+
+        if (mediaType === 'audio') {
+          user.audioTrack?.play();
+          console.log('Playing remote audio for user:', user.uid);
+        }
+      } catch (error) {
+        console.error('Error handling remote user:', error);
+      }
+    };
+
+    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      console.log('User left:', user.uid);
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    };
+
+    const handleUserUnpublished = (user: IAgoraRTCRemoteUser) => {
+      console.log('User unpublished:', user.uid);
+      client.unsubscribe(user);
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    };
+
+    // Add all event listeners
+    client.on('user-published', handleUserPublished);
+    client.on('user-left', handleUserLeft);
+    client.on('user-unpublished', handleUserUnpublished);
+
+    return () => {
+      client.off('user-published', handleUserPublished);
+      client.off('user-left', handleUserLeft);
+      client.off('user-unpublished', handleUserUnpublished);
+    };
+  }, [client]);
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    // Subscribe to room_participants changes
+    const subscription = supabase
+      .channel(`room:${roomId}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'room_participants',
+          filter: `room_id=eq.${roomId}`
+        }, 
+        () => {
+          // Fetch participants when changes occur
+          fetchParticipants();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [roomId]);
+
+  // Add this function to handle room joining
+  const joinRoom = async () => {
+    try {
+      // Add user to room_participants
+      const { error } = await supabase
+        .from('room_participants')
+        .upsert({
+          room_id: roomId,
+          user_id: currentUserId,
+          joined_at: new Date().toISOString(),
+          is_focused: true
+        });
+
+      if (error) {
+        console.error('Error joining room:', error);
+        return;
+      }
+
+      // Then initialize video
+      await initializeVideo();
+    } catch (error) {
+      console.error('Error in joinRoom:', error);
+    }
+  };
+
+  // Update useEffect to use joinRoom
+  useEffect(() => {
+    if (!currentUserId || !roomId) return;
+    
+    joinRoom();
+
+    return () => {
+      // Cleanup: Remove from room_participants when leaving
+      supabase
+        .from('room_participants')
+        .delete()
+        .match({ room_id: roomId, user_id: currentUserId })
+        .then(({ error }) => {
+          if (error) console.error('Error leaving room:', error);
+        });
+      
+      cleanup();
+    };
+  }, [currentUserId, roomId]);
 
   return (
     <div className="min-h-screen bg-[#0a0f1a]">
@@ -322,74 +443,90 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         <div className="flex-1 p-10 pt-24">
           <div className="max-w-3xl mx-auto space-y-6">
             {/* Video Container */}
-            <div className="relative rounded-2xl overflow-hidden bg-black aspect-video border border-white/5">
-              <div ref={localVideoRef} className="absolute inset-0 bg-black" />
-              
-              {/* Loading State */}
-              {isInitializing && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white/30" />
-                    <p className="text-sm text-white/70">Initializing video...</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Error State */}
-              {error && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                  <div className="text-center p-6 max-w-md">
-                    <Icons.check className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <p className="text-white/90 mb-4">{error}</p>
-                    <div className="text-sm text-white/60 mb-6">
-                      <p>Troubleshooting steps:</p>
-                      <ul className="list-disc list-inside mt-2">
-                        <li>Check if camera is being used by another app</li>
-                        <li>Ensure camera permissions are granted</li>
-                        <li>Try refreshing the page</li>
-                        <li>Try a different browser</li>
-                      </ul>
+            <div className="grid grid-cols-2 gap-4 auto-rows-fr">
+              {/* Local Video */}
+              <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
+                <div ref={localVideoRef} className="absolute inset-0" />
+                
+                {/* Loading State */}
+                {isInitializing && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white/30" />
+                      <p className="text-sm text-white/70">Initializing video...</p>
                     </div>
-                    <Button 
-                      onClick={() => {
-                        setError(null);
-                        initializeVideo();
-                      }}
-                      className="bg-white/10 hover:bg-white/20"
+                  </div>
+                )}
+
+                {/* Error State */}
+                {error && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+                    <div className="text-center p-6 max-w-md">
+                      <Icons.check className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                      <p className="text-white/90 mb-4">{error}</p>
+                      <div className="text-sm text-white/60 mb-6">
+                        <p>Troubleshooting steps:</p>
+                        <ul className="list-disc list-inside mt-2">
+                          <li>Check if camera is being used by another app</li>
+                          <li>Ensure camera permissions are granted</li>
+                          <li>Try refreshing the page</li>
+                          <li>Try a different browser</li>
+                        </ul>
+                      </div>
+                      <Button 
+                        onClick={() => {
+                          setError(null);
+                          initializeVideo();
+                        }}
+                        className="bg-white/10 hover:bg-white/20"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Video Controls */}
+                <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-all duration-300">
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20"
+                      onClick={handleVideoToggle}
                     >
-                      Try Again
+                      {isVideoEnabled ? 
+                        <Icons.video className="h-5 w-5" /> : 
+                        <Icons.videoOff className="h-5 w-5 text-red-400" />
+                      }
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20"
+                      onClick={handleAudioToggle}
+                    >
+                      {isAudioEnabled ? 
+                        <Icons.mic className="h-5 w-5" /> : 
+                        <Icons.micOff className="h-5 w-5 text-red-400" />
+                      }
                     </Button>
                   </div>
                 </div>
-              )}
-
-              {/* Video Controls */}
-              <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-all duration-300">
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20"
-                    onClick={handleVideoToggle}
-                  >
-                    {isVideoEnabled ? 
-                      <Icons.video className="h-5 w-5" /> : 
-                      <Icons.videoOff className="h-5 w-5 text-red-400" />
-                    }
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20"
-                    onClick={handleAudioToggle}
-                  >
-                    {isAudioEnabled ? 
-                      <Icons.mic className="h-5 w-5" /> : 
-                      <Icons.micOff className="h-5 w-5 text-red-400" />
-                    }
-                  </Button>
-                </div>
               </div>
+
+              {/* Remote Videos */}
+              {remoteUsers.map(user => (
+                <div 
+                  key={user.uid}
+                  className="relative rounded-2xl overflow-hidden bg-black aspect-video"
+                >
+                  <div
+                    ref={el => remoteVideoRefs.current[user.uid] = el}
+                    className="absolute inset-0"
+                  />
+                </div>
+              ))}
             </div>
 
             {/* Focus Progress */}
@@ -422,3 +559,4 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     </div>
   );
 } 
+

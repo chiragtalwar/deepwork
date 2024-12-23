@@ -31,6 +31,11 @@ export default function Rooms() {
     };
   }, []);
 
+  const handleCreateRoom = () => {
+    // For now, just navigate to test room
+    navigate('/rooms/test');
+  };
+
   return (
     <div className="min-h-screen relative">
       {/* Background with overlay */}
@@ -47,8 +52,26 @@ export default function Rooms() {
 
       {/* Main Content */}
       <div className="relative container mx-auto px-4 mt-24 pb-20">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-2xl font-semibold text-white">Available Rooms</h1>
+          
+          {/* Add Test Room Button */}
+          <div className="flex gap-4">
+            <Button
+              onClick={() => navigate('/rooms/test')}
+              className="bg-purple-500/20 hover:bg-purple-500/30 backdrop-blur-sm
+                border border-white/10 shadow-lg"
+            >
+              <Icons.testTube className="mr-2 h-4 w-4" />
+              Test Video Room
+            </Button>
+            <Button onClick={handleCreateRoom}>
+              <Icons.sun className="mr-2 h-4 w-4" />
+              Create Room
+            </Button>
+          </div>
+        </div>
         
-
         <Tabs 
           defaultValue="upcoming" 
           className="max-w-2xl mx-auto"
