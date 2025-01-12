@@ -34,9 +34,9 @@ interface Participant {
 // Constants for the room system
 const ROOM_CONFIG = {
   MAX_PARTICIPANTS: 5,
-  HEARTBEAT_INTERVAL: 15000,     // 15 seconds - more frequent updates
-  PRESENCE_TIMEOUT: 45000,       // 45 seconds - more forgiving timeout
-  CLEANUP_INTERVAL: 60000,       // 1 minute
+  HEARTBEAT_INTERVAL: 30000,    // 30 seconds
+  PRESENCE_TIMEOUT: 90000,      // 90 seconds
+  CLEANUP_INTERVAL: 120000,     // 2 minutes
   VIDEO_CONFIG: {
     normal: {
       width: 640,
@@ -47,24 +47,20 @@ const ROOM_CONFIG = {
       optimizationMode: "detail"
     },
     background: {
-      width: 160,
-      height: 90,
+      width: 320,
+      height: 180,
       frameRate: 5,
-      bitrateMin: 50,
-      bitrateMax: 100,
-      optimizationMode: "motion"
+      bitrateMin: 100,
+      bitrateMax: 200
     }
   }
 } as const;
 
-// Initialize Agora client with optimized settings
+// Initialize Agora client with optimal settings for deep work
 const client = AgoraRTC.createClient({ 
   mode: "rtc", 
   codec: "vp8",
-  role: "host",
-  clientRoleOptions: {
-    level: 2 // Higher level for better latency
-  }
+  role: "host"
 });
 
 // Room ID - would come from your room management system
@@ -149,38 +145,23 @@ export function TestVideoRoom() {
     throw new Error('Failed to initialize tracks');
   };
 
-  // Enhanced visibility change handler with connection persistence
+  // Enhanced visibility change handler for passive behavior
   const handleVisibilityChange = async () => {
+    if (!videoTrackRef.current) return;
+    
     const isHidden = document.hidden;
     lastVisibilityState.current = isHidden ? 'hidden' : 'visible';
 
     try {
-      if (!videoTrackRef.current) return;
-
       if (isHidden) {
-        addLog('Tab hidden - optimizing resources');
-        await videoTrackRef.current.setEnabled(false);
+        addLog('Tab hidden, optimizing resources');
         await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.background);
+        await videoTrackRef.current.setEnabled(false); // Pause video but keep connection
       } else {
-        addLog('Tab visible - restoring video');
+        addLog('Tab visible, restoring video');
         await videoTrackRef.current.setEnabled(true);
         await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.normal);
-        
-        // Ensure video containers are properly set up
-        if (localVideoRef.current) {
-          videoTrackRef.current.play(localVideoRef.current);
-        }
-
-        // Refresh remote videos
-        remoteUsers.forEach(user => {
-          if (user.videoTrack && videoContainersRef.current[user.uid]) {
-            user.videoTrack.play(videoContainersRef.current[user.uid]!);
-          }
-        });
       }
-
-      // Always maintain presence, even in background
-      await updatePresence();
     } catch (error) {
       addLog(`Visibility change error: ${error}`);
     }
@@ -293,66 +274,31 @@ export function TestVideoRoom() {
     }
   };
 
-  // Improved initialization with connection persistence
+  // Initialize the room
   const initializeRoom = async () => {
-    if (!user || joinInProgressRef.current) return;
+    if (!user || joinInProgressRef.current) {
+      addLog('Join already in progress or no user');
+      return;
+    }
 
     joinInProgressRef.current = true;
     setIsInitializing(true);
     addLog('Starting room initialization...');
 
     try {
-      // Only leave if we're in a different room
-      if (client.connectionState === 'CONNECTED' && client.channelName !== TEST_ROOM_UUID) {
-        await client.leave();
-        addLog('Left previous room');
-      }
-
-      // Don't rejoin if already in correct room
-      if (client.connectionState === 'CONNECTED' && client.channelName === TEST_ROOM_UUID) {
-        addLog('Already in correct room, skipping join');
-        setIsConnected(true);
-        await updatePresence();
-        return;
-      }
-
-      // Reset state for new connection
-      setRemoteUsers([]);
-      remoteVideoRefs.current = {};
-
-      // Join channel with retry logic
-      let joinAttempts = 0;
-      while (joinAttempts < 3) {
-        try {
-          await client.join(
-            import.meta.env.VITE_AGORA_APP_ID!,
-            TEST_ROOM_UUID,
-            null,
-            user.id
-          );
-          addLog('Joined Agora channel');
-          break;
-        } catch (error) {
-          joinAttempts++;
-          if (joinAttempts === 3) throw error;
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-
+      // Join Agora channel
+      await client.join(
+        import.meta.env.VITE_AGORA_APP_ID!,
+        TEST_ROOM_UUID,
+        null,
+        user.id
+      );
+      addLog('Joined Agora channel');
       setIsConnected(true);
 
       // Initialize tracks
       const { videoTrack, audioTrack } = await initializeTracks();
-      
-      // Clean up existing tracks if any
-      if (videoTrackRef.current) {
-        videoTrackRef.current.stop();
-        videoTrackRef.current.close();
-      }
-      if (audioTrackRef.current) {
-        audioTrackRef.current.stop();
-        audioTrackRef.current.close();
-      }
+      addLog('Tracks initialized successfully');
 
       videoTrackRef.current = videoTrack;
       audioTrackRef.current = audioTrack;
@@ -363,48 +309,29 @@ export function TestVideoRoom() {
         addLog('Local video playing');
       }
 
-      // Publish tracks with retry
-      let publishAttempts = 0;
-      while (publishAttempts < 3) {
-        try {
-          await client.publish([videoTrack, audioTrack]);
-          addLog('Published tracks successfully');
-          break;
-        } catch (error) {
-          publishAttempts++;
-          if (publishAttempts === 3) throw error;
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
+      // Publish tracks
+      await client.publish([videoTrack, audioTrack]);
+      addLog('Published tracks successfully');
 
-      // Update presence and start intervals
+      // Update presence and fetch initial participants
       await updatePresence();
-      
-      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
-      heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
-
-      if (cleanupIntervalRef.current) clearInterval(cleanupIntervalRef.current);
-      cleanupIntervalRef.current = setInterval(fetchParticipants, ROOM_CONFIG.CLEANUP_INTERVAL);
-
-      // Initial fetch of participants
       await fetchParticipants();
 
     } catch (error) {
       addLog(`Room initialization error: ${error}`);
       setIsConnected(false);
-      await cleanup();
     } finally {
       setIsInitializing(false);
       joinInProgressRef.current = false;
     }
   };
 
-  // Enhanced cleanup with proper resource management
+  // Passive cleanup that maintains connection
   const cleanup = async () => {
     addLog('Starting cleanup...');
     
     try {
-      // Clear intervals first
+      // Clear intervals
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = undefined;
@@ -416,14 +343,17 @@ export function TestVideoRoom() {
 
       // Remove from room_participants
       if (user) {
-        await supabase
+        const { error } = await supabase
           .from('room_participants')
           .delete()
           .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
-        addLog('Removed from room_participants');
+
+        if (error) {
+          addLog(`Failed to remove participant: ${error.message}`);
+        }
       }
 
-      // Cleanup tracks
+      // Only cleanup tracks if we're actually leaving
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
@@ -435,7 +365,7 @@ export function TestVideoRoom() {
         audioTrackRef.current = null;
       }
 
-      // Leave Agora channel if connected
+      // Leave Agora channel
       if (client.connectionState === 'CONNECTED') {
         await client.leave();
         addLog('Left Agora channel');
@@ -448,7 +378,6 @@ export function TestVideoRoom() {
       setStatus('focus');
       setIsConnected(false);
       remoteVideoRefs.current = {};
-      
     } catch (error) {
       addLog(`Cleanup error: ${error}`);
     }
@@ -521,25 +450,51 @@ export function TestVideoRoom() {
       delete remoteVideoRefs.current[user.uid];
     };
 
-    // Connection state handler with reconnection logic
-    const handleConnectionStateChange = async (curState: string, prevState: string) => {
+    // Simplified connection state handler
+    const handleConnectionStateChange = (curState: string, prevState: string) => {
       addLog(`Connection state changed from ${prevState} to ${curState}`);
       connectionStateRef.current = curState;
       setIsConnected(curState === 'CONNECTED');
-      
-      if (curState === 'DISCONNECTED' && prevState === 'CONNECTED') {
-        // Try to reconnect immediately
-        addLog('Attempting to reconnect...');
-        await initializeRoom();
-      }
     };
 
-    // Set up event listeners
-    client.on('user-published', handleUserPublished);
-    client.on('user-unpublished', handleUserUnpublished);
-    client.on('user-left', handleUserLeft);
-    client.on('connection-state-change', handleConnectionStateChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Initialize room only once
+    useEffect(() => {
+      if (!user) return;
+      
+      // Initialize only if not already connected
+      if (client.connectionState !== 'CONNECTED') {
+        initializeRoom();
+      }
+
+      // Set up event listeners
+      client.on('user-published', handleUserPublished);
+      client.on('user-unpublished', handleUserUnpublished);
+      client.on('user-left', handleUserLeft);
+      client.on('connection-state-change', handleConnectionStateChange);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
+      // Start intervals for presence and cleanup
+      heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
+      cleanupIntervalRef.current = setInterval(fetchParticipants, ROOM_CONFIG.CLEANUP_INTERVAL);
+
+      return () => {
+        cleanup();
+        client.off('user-published', handleUserPublished);
+        client.off('user-unpublished', handleUserUnpublished);
+        client.off('user-left', handleUserLeft);
+        client.off('connection-state-change', handleConnectionStateChange);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }, [user]);
+
+    // Remove the remoteUsers effect that was causing reconnections
+    useEffect(() => {
+      remoteUsers.forEach(user => {
+        if (user.videoTrack && videoContainersRef.current[user.uid] && !document.hidden) {
+          user.videoTrack.play(videoContainersRef.current[user.uid]!);
+        }
+      });
+    }, [remoteUsers]);
 
     return () => {
       client.off('user-published', handleUserPublished);
@@ -549,33 +504,6 @@ export function TestVideoRoom() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
-
-  // Update video container refs when remote users change
-  useEffect(() => {
-    remoteUsers.forEach(user => {
-      if (user.videoTrack && videoContainersRef.current[user.uid]) {
-        user.videoTrack.play(videoContainersRef.current[user.uid]!);
-      }
-    });
-  }, [remoteUsers]);
-
-  // Initialize room when user is available
-  useEffect(() => {
-    if (!user) return;
-    
-    // Cleanup first if needed
-    if (client.connectionState === 'CONNECTED') {
-      cleanup().then(() => {
-    initializeRoom();
-      });
-    } else {
-      initializeRoom();
-    }
-
-    return () => {
-      cleanup();
-    };
-  }, [user]);
 
   // Render the room UI
   return (
