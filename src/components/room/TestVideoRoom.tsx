@@ -335,12 +335,18 @@ export function TestVideoRoom() {
   useEffect(() => {
     if (!user) return;
 
+    // Start polling for participants
+    const participantsPollInterval = setInterval(async () => {
+      await fetchParticipants();
+    }, 5000); // Poll every 5 seconds
+
     // Event handlers
     const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
       if (user.uid === client.uid) return;
 
       try {
         await client.subscribe(user, mediaType);
+        addLog(`Subscribed to ${mediaType} from user: ${user.uid}`);
         
         if (mediaType === 'video') {
           setRemoteUsers(prev => {
@@ -358,6 +364,9 @@ export function TestVideoRoom() {
         if (mediaType === 'audio') {
           user.audioTrack?.play();
         }
+
+        // Fetch participants to ensure we have their info
+        await fetchParticipants();
       } catch (error) {
         addLog(`Failed to handle user-published event: ${error}`);
       }
@@ -402,10 +411,18 @@ export function TestVideoRoom() {
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
       }
+      clearInterval(participantsPollInterval);
     };
 
     return cleanup;
   }, [user]);
+
+  // Fetch participants whenever remote users change
+  useEffect(() => {
+    if (remoteUsers.length > 0) {
+      fetchParticipants();
+    }
+  }, [remoteUsers]);
 
   // Handle explicit room exit only
   const handleLeaveRoom = async () => {
@@ -699,7 +716,7 @@ export function TestVideoRoom() {
         </div>
         {/* Version indicator */}
         <div className="fixed bottom-4 right-4 text-white/30 text-sm font-light">
-          Version 5
+          Version 6
         </div>
       </div>
     </div>
