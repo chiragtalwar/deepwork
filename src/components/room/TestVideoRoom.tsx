@@ -457,44 +457,12 @@ export function TestVideoRoom() {
       setIsConnected(curState === 'CONNECTED');
     };
 
-    // Initialize room only once
-    useEffect(() => {
-      if (!user) return;
-      
-      // Initialize only if not already connected
-      if (client.connectionState !== 'CONNECTED') {
-        initializeRoom();
-      }
-
-      // Set up event listeners
-      client.on('user-published', handleUserPublished);
-      client.on('user-unpublished', handleUserUnpublished);
-      client.on('user-left', handleUserLeft);
-      client.on('connection-state-change', handleConnectionStateChange);
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-
-      // Start intervals for presence and cleanup
-      heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
-      cleanupIntervalRef.current = setInterval(fetchParticipants, ROOM_CONFIG.CLEANUP_INTERVAL);
-
-      return () => {
-        cleanup();
-        client.off('user-published', handleUserPublished);
-        client.off('user-unpublished', handleUserUnpublished);
-        client.off('user-left', handleUserLeft);
-        client.off('connection-state-change', handleConnectionStateChange);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      };
-    }, [user]);
-
-    // Remove the remoteUsers effect that was causing reconnections
-    useEffect(() => {
-      remoteUsers.forEach(user => {
-        if (user.videoTrack && videoContainersRef.current[user.uid] && !document.hidden) {
-          user.videoTrack.play(videoContainersRef.current[user.uid]!);
-        }
-      });
-    }, [remoteUsers]);
+    // Set up event listeners
+    client.on('user-published', handleUserPublished);
+    client.on('user-unpublished', handleUserUnpublished);
+    client.on('user-left', handleUserLeft);
+    client.on('connection-state-change', handleConnectionStateChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       client.off('user-published', handleUserPublished);
@@ -504,6 +472,33 @@ export function TestVideoRoom() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
+
+  // Initialize room when user is available
+  useEffect(() => {
+    if (!user) return;
+    
+    // Initialize only if not already connected
+    if (client.connectionState !== 'CONNECTED') {
+      initializeRoom();
+    }
+
+    // Start intervals for presence and cleanup
+    heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
+    cleanupIntervalRef.current = setInterval(fetchParticipants, ROOM_CONFIG.CLEANUP_INTERVAL);
+
+    return () => {
+      cleanup();
+    };
+  }, [user]);
+
+  // Handle remote user video playback
+  useEffect(() => {
+    remoteUsers.forEach(user => {
+      if (user.videoTrack && videoContainersRef.current[user.uid] && !document.hidden) {
+        user.videoTrack.play(videoContainersRef.current[user.uid]!);
+      }
+    });
+  }, [remoteUsers]);
 
   // Render the room UI
   return (
