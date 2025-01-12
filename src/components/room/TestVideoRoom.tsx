@@ -44,14 +44,15 @@ const ROOM_CONFIG = {
       height: 360,
       frameRate: 15,
       bitrateMin: 200,
-      bitrateMax: 400
+      bitrateMax: 400,
+      optimizationMode: "detail"
     },
     background: {
-      width: 160,
-      height: 120,
+      width: 320,
+      height: 180,
       frameRate: 5,
-      bitrateMin: 50,
-      bitrateMax: 100
+      bitrateMin: 100,
+      bitrateMax: 200
     }
   }
 } as const;
@@ -59,7 +60,8 @@ const ROOM_CONFIG = {
 // Initialize Agora client with optimal settings for deep work
 const client = AgoraRTC.createClient({ 
   mode: "rtc", 
-  codec: "vp8"
+  codec: "vp8",
+  role: "host"
 });
 
 // Room ID - would come from your room management system
@@ -90,6 +92,8 @@ export function TestVideoRoom() {
   const reconnectAttemptsRef = useRef(0);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
   const cleanupIntervalRef = useRef<NodeJS.Timeout>();
+  const lastVisibilityState = useRef<'visible' | 'hidden'>('visible');
+  const videoContainersRef = useRef<{ [uid: string]: HTMLDivElement | null }>({});
 
   // Enhanced logging with timestamps
   const addLog = (message: string) => {
@@ -120,19 +124,36 @@ export function TestVideoRoom() {
     }
   };
 
-  // Handle visibility changes for better background performance
+  // Enhanced visibility change handler
   const handleVisibilityChange = async () => {
     if (!videoTrackRef.current) return;
 
     try {
-      if (document.hidden) {
+      const isHidden = document.hidden;
+      const wasHidden = lastVisibilityState.current === 'hidden';
+      lastVisibilityState.current = isHidden ? 'hidden' : 'visible';
+
+      if (isHidden) {
         addLog('Tab hidden, optimizing video settings');
         await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.background);
-      } else {
+        // Don't stop the video, just reduce quality
+      } else if (wasHidden) {
         addLog('Tab visible, restoring video settings');
         await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.normal);
+        
+        // Ensure all videos are playing
+        if (localVideoRef.current && videoTrackRef.current) {
+          videoTrackRef.current.play(localVideoRef.current);
         }
-      } catch (error) {
+
+        // Ensure all remote videos are playing
+        remoteUsers.forEach(user => {
+          if (user.videoTrack && videoContainersRef.current[user.uid]) {
+            user.videoTrack.play(videoContainersRef.current[user.uid]!);
+          }
+        });
+      }
+    } catch (error) {
       addLog(`Visibility change error: ${error}`);
     }
   };
@@ -242,6 +263,11 @@ export function TestVideoRoom() {
         addLog('Left existing connection');
       }
 
+      // Reset state
+      setRemoteUsers([]);
+      remoteVideoRefs.current = {};
+      reconnectAttemptsRef.current = 0;
+
       // Join Agora first
       await client.join(
         import.meta.env.VITE_AGORA_APP_ID!,
@@ -252,11 +278,7 @@ export function TestVideoRoom() {
       addLog('Joined Agora channel');
       setIsConnected(true);
 
-      // Then update presence
-      await updatePresence();
-      addLog('Updated presence');
-
-      // Initialize tracks
+      // Initialize tracks with optimal settings
       const { videoTrack, audioTrack } = await initializeTracks();
       
       // Clean up any existing tracks
@@ -281,6 +303,10 @@ export function TestVideoRoom() {
       // Publish tracks
       await client.publish([videoTrack, audioTrack]);
       addLog('Published tracks successfully');
+
+      // Then update presence
+      await updatePresence();
+      addLog('Updated presence');
 
       // Start presence heartbeat
       if (heartbeatIntervalRef.current) {
@@ -313,7 +339,17 @@ export function TestVideoRoom() {
     addLog('Starting cleanup...');
     
     try {
-      // First remove from room_participants
+      // Clear intervals first
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = undefined;
+      }
+      if (cleanupIntervalRef.current) {
+        clearInterval(cleanupIntervalRef.current);
+        cleanupIntervalRef.current = undefined;
+      }
+
+      // Remove from room_participants
       if (user) {
         const { error } = await supabase
           .from('room_participants')
@@ -325,16 +361,6 @@ export function TestVideoRoom() {
         } else {
           addLog('Removed from room_participants');
         }
-      }
-
-      // Clear intervals
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = undefined;
-      }
-      if (cleanupIntervalRef.current) {
-        clearInterval(cleanupIntervalRef.current);
-        cleanupIntervalRef.current = undefined;
       }
 
       // Cleanup tracks
@@ -361,6 +387,8 @@ export function TestVideoRoom() {
       setCurrentFocusTask('');
       setStatus('focus');
       setIsConnected(false);
+      remoteVideoRefs.current = {};
+      reconnectAttemptsRef.current = 0;
       
     } catch (error) {
       addLog(`Cleanup error: ${error}`);
@@ -373,29 +401,15 @@ export function TestVideoRoom() {
     navigate('/');
   };
 
-  // Setup event listeners
+  // Enhanced user-published handler
   useEffect(() => {
-    // Connection state handler
-    const handleConnectionStateChange = (curState: string, prevState: string) => {
-      addLog(`Connection state changed from ${prevState} to ${curState}`);
-      connectionStateRef.current = curState;
-      setIsConnected(curState === 'CONNECTED');
-      
-      if (curState === 'DISCONNECTED' && prevState === 'CONNECTED') {
-        // Handle unexpected disconnection
-        addLog('Unexpected disconnection, attempting to reconnect...');
-        void initializeRoom();
+    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      if (user.uid === client.uid) {
+        addLog(`Ignoring own ${mediaType} stream`);
+        return;
       }
-    };
 
-    client.on('connection-state-change', handleConnectionStateChange);
-
-    // Visibility change handler   
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Agora event handlers
-    client.on('user-published', async (user, mediaType) => {
-      addLog(`User ${user.uid} published ${mediaType}`);
+      addLog(`Remote user ${user.uid} published ${mediaType}`);
       
       try {
         await client.subscribe(user, mediaType);
@@ -403,46 +417,93 @@ export function TestVideoRoom() {
 
         if (mediaType === 'video') {
           setRemoteUsers(prev => {
-            if (!prev.find(u => u.uid === user.uid)) {
+            const exists = prev.some(u => u.uid === user.uid);
+            if (!exists) {
+              addLog(`Adding remote user ${user.uid} to state`);
               return [...prev, user];
             }
             return prev;
           });
 
-          // Play video once container is available
-          if (remoteVideoRefs.current[user.uid]) {
-            await user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+          // Store video container reference
+          if (videoContainersRef.current[user.uid]) {
+            user.videoTrack?.play(videoContainersRef.current[user.uid]!);
+            addLog(`Playing video for user ${user.uid}`);
+          } else {
+            addLog(`Video container not ready for user ${user.uid}`);
           }
         }
 
         if (mediaType === 'audio') {
-          await user.audioTrack?.play();
+          user.audioTrack?.play();
+          addLog(`Playing audio for user ${user.uid}`);
         }
       } catch (error) {
-        addLog(`Subscription error: ${error}`);
+        addLog(`Failed to handle user-published event: ${error}`);
       }
-    });
+    };
 
-    client.on('user-unpublished', (user, mediaType) => {
+    // Enhanced user-unpublished handler
+    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
       addLog(`User ${user.uid} unpublished ${mediaType}`);
       if (mediaType === 'video') {
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+        setRemoteUsers(prev => {
+          const filtered = prev.filter(u => u.uid !== user.uid);
+          addLog(`Removed user ${user.uid} from remote users. Count: ${filtered.length}`);
+          return filtered;
+        });
       }
-    });
+    };
 
-    client.on('user-left', (user) => {
-      addLog(`User ${user.uid} left`);
+    // Enhanced user-left handler
+    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      addLog(`User ${user.uid} left the channel`);
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    });
+      delete remoteVideoRefs.current[user.uid];
+    };
 
-    // Cleanup
+    // Connection state handler with reconnection logic
+    const handleConnectionStateChange = async (curState: string, prevState: string) => {
+      addLog(`Connection state changed from ${prevState} to ${curState}`);
+      connectionStateRef.current = curState;
+      setIsConnected(curState === 'CONNECTED');
+      
+      if (curState === 'DISCONNECTED' && prevState === 'CONNECTED') {
+        if (reconnectAttemptsRef.current < ROOM_CONFIG.RECONNECT_ATTEMPTS) {
+          reconnectAttemptsRef.current++;
+          addLog(`Attempting reconnection (${reconnectAttemptsRef.current}/${ROOM_CONFIG.RECONNECT_ATTEMPTS})`);
+          await initializeRoom();
+        } else {
+          addLog('Max reconnection attempts reached');
+          cleanup();
+        }
+      }
+    };
+
+    // Set up event listeners
+    client.on('user-published', handleUserPublished);
+    client.on('user-unpublished', handleUserUnpublished);
+    client.on('user-left', handleUserLeft);
+    client.on('connection-state-change', handleConnectionStateChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      client.removeAllListeners();
-      cleanup();
+      client.off('user-published', handleUserPublished);
+      client.off('user-unpublished', handleUserUnpublished);
+      client.off('user-left', handleUserLeft);
       client.off('connection-state-change', handleConnectionStateChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
+
+  // Update video container refs when remote users change
+  useEffect(() => {
+    remoteUsers.forEach(user => {
+      if (user.videoTrack && videoContainersRef.current[user.uid]) {
+        user.videoTrack.play(videoContainersRef.current[user.uid]!);
+      }
+    });
+  }, [remoteUsers]);
 
   // Initialize room when user is available
   useEffect(() => {
@@ -451,7 +512,7 @@ export function TestVideoRoom() {
     // Cleanup first if needed
     if (client.connectionState === 'CONNECTED') {
       cleanup().then(() => {
-        initializeRoom();
+    initializeRoom();
       });
     } else {
       initializeRoom();
@@ -606,7 +667,12 @@ export function TestVideoRoom() {
                     <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                       <div className="aspect-video bg-black/40 relative">
                 <div 
-                  ref={el => remoteVideoRefs.current[participant.user_id] = el}
+                  ref={el => {
+                    videoContainersRef.current[participant.user_id] = el;
+                    if (el && remoteUser?.videoTrack) {
+                      remoteUser.videoTrack.play(el);
+                    }
+                  }}
                   className="absolute inset-0" 
                 />
                         {!remoteUser?.videoTrack && (
@@ -688,7 +754,7 @@ export function TestVideoRoom() {
                     <div className="bg-black/10 rounded-lg p-3">
                       <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
                     </div>
-                  </div>
+                </div>
               </div>
             ))}
         </div>
