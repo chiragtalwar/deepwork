@@ -373,13 +373,13 @@ export function TestVideoRoom() {
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
       delete videoContainersRef.current[user.uid];
     };
-    
+
     // Only initialize if we've never connected
     if (client.connectionState === 'DISCONNECTED') {
       initializeRoom();
     }
 
-    // Set up minimal event listeners
+    // Set up event listeners
     client.on('user-published', handleUserPublished);
     client.on('user-unpublished', handleUserUnpublished);
     client.on('user-left', handleUserLeft);
@@ -389,38 +389,29 @@ export function TestVideoRoom() {
     // Start presence heartbeat
     heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
 
-    return () => {
-      // Only clean up if user is actually leaving the room, not just switching tabs
-      if (lastVisibilityState.current === 'visible') {
-        cleanup();
-      }
-      
+    // This cleanup should ONLY run when the component is truly unmounting
+    const cleanup = () => {
       // Remove event listeners
       client.off('user-published', handleUserPublished);
       client.off('user-unpublished', handleUserUnpublished);
       client.off('user-left', handleUserLeft);
       client.off('connection-state-change', handleConnectionStateChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [user]);
 
-  // Simplified cleanup - only called when explicitly leaving the room
-  const cleanup = async () => {
-    // Don't cleanup if just switching tabs
-    if (document.hidden) {
-      addLog('Tab hidden, skipping cleanup');
-      return;
-    }
-    
-    addLog('Starting cleanup...');
-    
-    try {
       // Clear intervals
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = undefined;
       }
+    };
 
+    return cleanup;
+  }, [user]);
+
+  // Handle explicit room exit only
+  const handleLeaveRoom = async () => {
+    addLog('Leaving room explicitly...');
+    
+    try {
       // Remove from room_participants
       if (user) {
         await supabase
@@ -452,15 +443,12 @@ export function TestVideoRoom() {
       setCurrentFocusTask('');
       setStatus('focus');
       setIsConnected(false);
-    } catch (error) {
-      addLog(`Cleanup error: ${error}`);
-    }
-  };
 
-  // Handle room exit
-  const handleLeaveRoom = async () => {
-    await cleanup();
-    navigate('/');
+      // Navigate away
+      navigate('/');
+    } catch (error) {
+      addLog(`Leave room error: ${error}`);
+    }
   };
 
   // Handle remote user video playback
