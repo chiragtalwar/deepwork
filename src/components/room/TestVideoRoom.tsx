@@ -711,7 +711,7 @@ export function TestVideoRoom() {
         </div>
         {/* Version indicator */}
         <div className="fixed bottom-4 right-4 text-white/30 text-sm font-light">
-          Version 2
+          Version 3
         </div>
       </div>
     </div>
