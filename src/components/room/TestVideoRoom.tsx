@@ -150,12 +150,16 @@ export function TestVideoRoom() {
     if (!videoTrackRef.current) return;
     
     const isHidden = document.hidden;
+    lastVisibilityState.current = isHidden ? 'hidden' : 'visible';
     
     try {
-      // Just adjust video quality, don't stop/start anything
-      await videoTrackRef.current.setEncoderConfiguration(
-        isHidden ? ROOM_CONFIG.VIDEO_CONFIG.background : ROOM_CONFIG.VIDEO_CONFIG.normal
-      );
+      if (isHidden) {
+        // Just reduce quality, don't stop anything
+        await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.background);
+      } else {
+        // Restore quality when visible
+        await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.normal);
+      }
     } catch (error) {
       addLog(`Video quality adjustment error: ${error}`);
     }
@@ -386,8 +390,10 @@ export function TestVideoRoom() {
     heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
 
     return () => {
-      // Only clean up if user is actually leaving the room
-      cleanup();
+      // Only clean up if user is actually leaving the room, not just switching tabs
+      if (lastVisibilityState.current === 'visible') {
+        cleanup();
+      }
       
       // Remove event listeners
       client.off('user-published', handleUserPublished);
@@ -398,8 +404,14 @@ export function TestVideoRoom() {
     };
   }, [user]);
 
-  // Simplified cleanup - only called when actually leaving the room
+  // Simplified cleanup - only called when explicitly leaving the room
   const cleanup = async () => {
+    // Don't cleanup if just switching tabs
+    if (document.hidden) {
+      addLog('Tab hidden, skipping cleanup');
+      return;
+    }
+    
     addLog('Starting cleanup...');
     
     try {
