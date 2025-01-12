@@ -47,11 +47,11 @@ const ROOM_CONFIG = {
       optimizationMode: "detail"
     },
     background: {
-      width: 320,
-      height: 180,
-      frameRate: 5,
-      bitrateMin: 100,
-      bitrateMax: 200
+      width: 480,      // Slightly reduced
+      height: 270,     // Maintain aspect ratio
+      frameRate: 10,   // Still decent framerate
+      bitrateMin: 150, // Reduced but not too low
+      bitrateMax: 300
     }
   }
 } as const;
@@ -145,25 +145,19 @@ export function TestVideoRoom() {
     throw new Error('Failed to initialize tracks');
   };
 
-  // Enhanced visibility change handler for passive behavior
+  // Minimal visibility handler - just optimize resources
   const handleVisibilityChange = async () => {
     if (!videoTrackRef.current) return;
     
     const isHidden = document.hidden;
-    lastVisibilityState.current = isHidden ? 'hidden' : 'visible';
-
+    
     try {
-      if (isHidden) {
-        addLog('Tab hidden, optimizing resources');
-        await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.background);
-        await videoTrackRef.current.setEnabled(false); // Pause video but keep connection
-      } else {
-        addLog('Tab visible, restoring video');
-        await videoTrackRef.current.setEnabled(true);
-        await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.normal);
-      }
+      // Just adjust video quality, don't stop/start anything
+      await videoTrackRef.current.setEncoderConfiguration(
+        isHidden ? ROOM_CONFIG.VIDEO_CONFIG.background : ROOM_CONFIG.VIDEO_CONFIG.normal
+      );
     } catch (error) {
-      addLog(`Visibility change error: ${error}`);
+      addLog(`Video quality adjustment error: ${error}`);
     }
   };
 
@@ -326,7 +320,85 @@ export function TestVideoRoom() {
     }
   };
 
-  // Passive cleanup that maintains connection
+  // Simplified connection state handler - no reconnection logic
+  const handleConnectionStateChange = (curState: string, prevState: string) => {
+    addLog(`Connection state changed from ${prevState} to ${curState}`);
+    connectionStateRef.current = curState;
+    setIsConnected(curState === 'CONNECTED');
+  };
+
+  // Initialize room only once
+  useEffect(() => {
+    if (!user) return;
+
+    // Event handlers
+    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      if (user.uid === client.uid) return;
+
+      try {
+        await client.subscribe(user, mediaType);
+        
+        if (mediaType === 'video') {
+          setRemoteUsers(prev => {
+            if (!prev.some(u => u.uid === user.uid)) {
+              return [...prev, user];
+            }
+            return prev;
+          });
+
+          if (videoContainersRef.current[user.uid]) {
+            user.videoTrack?.play(videoContainersRef.current[user.uid]!);
+          }
+        }
+
+        if (mediaType === 'audio') {
+          user.audioTrack?.play();
+        }
+      } catch (error) {
+        addLog(`Failed to handle user-published event: ${error}`);
+      }
+    };
+
+    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      if (mediaType === 'video') {
+        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      }
+    };
+
+    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      delete videoContainersRef.current[user.uid];
+    };
+    
+    // Only initialize if we've never connected
+    if (client.connectionState === 'DISCONNECTED') {
+      initializeRoom();
+    }
+
+    // Set up minimal event listeners
+    client.on('user-published', handleUserPublished);
+    client.on('user-unpublished', handleUserUnpublished);
+    client.on('user-left', handleUserLeft);
+    client.on('connection-state-change', handleConnectionStateChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Start presence heartbeat
+    heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
+
+    return () => {
+      // Only clean up if user is actually leaving the room
+      cleanup();
+      
+      // Remove event listeners
+      client.off('user-published', handleUserPublished);
+      client.off('user-unpublished', handleUserUnpublished);
+      client.off('user-left', handleUserLeft);
+      client.off('connection-state-change', handleConnectionStateChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]);
+
+  // Simplified cleanup - only called when actually leaving the room
   const cleanup = async () => {
     addLog('Starting cleanup...');
     
@@ -336,24 +408,16 @@ export function TestVideoRoom() {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = undefined;
       }
-      if (cleanupIntervalRef.current) {
-        clearInterval(cleanupIntervalRef.current);
-        cleanupIntervalRef.current = undefined;
-      }
 
       // Remove from room_participants
       if (user) {
-        const { error } = await supabase
+        await supabase
           .from('room_participants')
           .delete()
           .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
-
-        if (error) {
-          addLog(`Failed to remove participant: ${error.message}`);
-        }
       }
 
-      // Only cleanup tracks if we're actually leaving
+      // Close tracks
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
@@ -368,7 +432,6 @@ export function TestVideoRoom() {
       // Leave Agora channel
       if (client.connectionState === 'CONNECTED') {
         await client.leave();
-        addLog('Left Agora channel');
       }
 
       // Reset states
@@ -377,7 +440,6 @@ export function TestVideoRoom() {
       setCurrentFocusTask('');
       setStatus('focus');
       setIsConnected(false);
-      remoteVideoRefs.current = {};
     } catch (error) {
       addLog(`Cleanup error: ${error}`);
     }
@@ -388,108 +450,6 @@ export function TestVideoRoom() {
     await cleanup();
     navigate('/');
   };
-
-  // Enhanced user-published handler
-  useEffect(() => {
-    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      if (user.uid === client.uid) {
-        addLog(`Ignoring own ${mediaType} stream`);
-        return;
-      }
-
-      addLog(`Remote user ${user.uid} published ${mediaType}`);
-      
-      try {
-        await client.subscribe(user, mediaType);
-        addLog(`Subscribed to ${mediaType} from user: ${user.uid}`);
-
-        if (mediaType === 'video') {
-          setRemoteUsers(prev => {
-            const exists = prev.some(u => u.uid === user.uid);
-            if (!exists) {
-              addLog(`Adding remote user ${user.uid} to state`);
-              return [...prev, user];
-            }
-            return prev;
-          });
-
-          // Store video container reference
-          if (videoContainersRef.current[user.uid]) {
-            user.videoTrack?.play(videoContainersRef.current[user.uid]!);
-            addLog(`Playing video for user ${user.uid}`);
-          } else {
-            addLog(`Video container not ready for user ${user.uid}`);
-          }
-        }
-
-        if (mediaType === 'audio') {
-          user.audioTrack?.play();
-          addLog(`Playing audio for user ${user.uid}`);
-        }
-      } catch (error) {
-        addLog(`Failed to handle user-published event: ${error}`);
-      }
-    };
-
-    // Enhanced user-unpublished handler
-    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      addLog(`User ${user.uid} unpublished ${mediaType}`);
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => {
-          const filtered = prev.filter(u => u.uid !== user.uid);
-          addLog(`Removed user ${user.uid} from remote users. Count: ${filtered.length}`);
-          return filtered;
-        });
-      }
-    };
-
-    // Enhanced user-left handler
-    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
-      addLog(`User ${user.uid} left the channel`);
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-      delete remoteVideoRefs.current[user.uid];
-    };
-
-    // Simplified connection state handler
-    const handleConnectionStateChange = (curState: string, prevState: string) => {
-      addLog(`Connection state changed from ${prevState} to ${curState}`);
-      connectionStateRef.current = curState;
-      setIsConnected(curState === 'CONNECTED');
-    };
-
-    // Set up event listeners
-    client.on('user-published', handleUserPublished);
-    client.on('user-unpublished', handleUserUnpublished);
-    client.on('user-left', handleUserLeft);
-    client.on('connection-state-change', handleConnectionStateChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      client.off('user-published', handleUserPublished);
-      client.off('user-unpublished', handleUserUnpublished);
-      client.off('user-left', handleUserLeft);
-      client.off('connection-state-change', handleConnectionStateChange);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // Initialize room when user is available
-  useEffect(() => {
-    if (!user) return;
-    
-    // Initialize only if not already connected
-    if (client.connectionState !== 'CONNECTED') {
-      initializeRoom();
-    }
-
-    // Start intervals for presence and cleanup
-    heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
-    cleanupIntervalRef.current = setInterval(fetchParticipants, ROOM_CONFIG.CLEANUP_INTERVAL);
-
-    return () => {
-      cleanup();
-    };
-  }, [user]);
 
   // Handle remote user video playback
   useEffect(() => {
@@ -739,7 +699,7 @@ export function TestVideoRoom() {
         </div>
         {/* Version indicator */}
         <div className="fixed bottom-4 right-4 text-white/30 text-sm font-light">
-          Version 1
+          Version 2
         </div>
       </div>
     </div>
