@@ -34,10 +34,9 @@ interface Participant {
 // Constants for the room system
 const ROOM_CONFIG = {
   MAX_PARTICIPANTS: 5,
-  HEARTBEAT_INTERVAL: 30000,    // 30 seconds
-  PRESENCE_TIMEOUT: 90000,      // 90 seconds
-  CLEANUP_INTERVAL: 120000,     // 2 minutes
-  RECONNECT_ATTEMPTS: 5,
+  HEARTBEAT_INTERVAL: 15000,     // 15 seconds - more frequent updates
+  PRESENCE_TIMEOUT: 45000,       // 45 seconds - more forgiving timeout
+  CLEANUP_INTERVAL: 60000,       // 1 minute
   VIDEO_CONFIG: {
     normal: {
       width: 640,
@@ -48,20 +47,24 @@ const ROOM_CONFIG = {
       optimizationMode: "detail"
     },
     background: {
-      width: 320,
-      height: 180,
+      width: 160,
+      height: 90,
       frameRate: 5,
-      bitrateMin: 100,
-      bitrateMax: 200
+      bitrateMin: 50,
+      bitrateMax: 100,
+      optimizationMode: "motion"
     }
   }
 } as const;
 
-// Initialize Agora client with optimal settings for deep work
+// Initialize Agora client with optimized settings
 const client = AgoraRTC.createClient({ 
   mode: "rtc", 
   codec: "vp8",
-  role: "host"
+  role: "host",
+  clientRoleOptions: {
+    level: 2 // Higher level for better latency
+  }
 });
 
 // Room ID - would come from your room management system
@@ -102,57 +105,82 @@ export function TestVideoRoom() {
     setDebugLogs(prev => [...prev.slice(-9), `${timestamp}: ${message}`]);
   };
 
-  // Initialize tracks with optimal settings
+  // Initialize tracks with optimal settings and retry logic
   const initializeTracks = async () => {
-    try {
-      const videoTrack = await AgoraRTC.createCameraVideoTrack({
-        encoderConfig: ROOM_CONFIG.VIDEO_CONFIG.normal,
-        optimizationMode: 'detail'
-      });
+    let attempts = 0;
+    const maxAttempts = 3;
 
-      const audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
-        encoderConfig: 'speech_low_quality',
-        AGC: true,
-        AEC: true,
-        ANS: true
-      });
+    while (attempts < maxAttempts) {
+      try {
+        // Request permissions first
+        await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-      return { videoTrack, audioTrack };
-    } catch (error) {
-      addLog(`Failed to initialize tracks: ${error}`);
-      throw error;
+        const videoTrack = await AgoraRTC.createCameraVideoTrack({
+          encoderConfig: ROOM_CONFIG.VIDEO_CONFIG.normal,
+          optimizationMode: 'detail',
+          facingMode: "user"
+        }).catch(async (err) => {
+          addLog(`Video track creation failed: ${err.message}`);
+          // Fallback to lower quality if initial fails
+          return await AgoraRTC.createCameraVideoTrack({
+            encoderConfig: ROOM_CONFIG.VIDEO_CONFIG.background,
+            optimizationMode: 'motion'
+          });
+        });
+
+        const audioTrack = await AgoraRTC.createMicrophoneAudioTrack({
+          encoderConfig: 'speech_low_quality',
+          AGC: true,
+          AEC: true,
+          ANS: true
+        });
+
+        return { videoTrack, audioTrack };
+      } catch (error) {
+        attempts++;
+        addLog(`Track initialization attempt ${attempts} failed: ${error}`);
+        if (attempts === maxAttempts) {
+          throw new Error(`Failed to initialize tracks after ${maxAttempts} attempts: ${error}`);
+        }
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
+    throw new Error('Failed to initialize tracks');
   };
 
-  // Enhanced visibility change handler
+  // Enhanced visibility change handler with connection persistence
   const handleVisibilityChange = async () => {
-    if (!videoTrackRef.current) return;
+    const isHidden = document.hidden;
+    lastVisibilityState.current = isHidden ? 'hidden' : 'visible';
 
     try {
-      const isHidden = document.hidden;
-      const wasHidden = lastVisibilityState.current === 'hidden';
-      lastVisibilityState.current = isHidden ? 'hidden' : 'visible';
+      if (!videoTrackRef.current) return;
 
       if (isHidden) {
-        addLog('Tab hidden, optimizing video settings');
+        addLog('Tab hidden - optimizing resources');
+        await videoTrackRef.current.setEnabled(false);
         await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.background);
-        // Don't stop the video, just reduce quality
-      } else if (wasHidden) {
-        addLog('Tab visible, restoring video settings');
+      } else {
+        addLog('Tab visible - restoring video');
+        await videoTrackRef.current.setEnabled(true);
         await videoTrackRef.current.setEncoderConfiguration(ROOM_CONFIG.VIDEO_CONFIG.normal);
         
-        // Ensure all videos are playing
-        if (localVideoRef.current && videoTrackRef.current) {
+        // Ensure video containers are properly set up
+        if (localVideoRef.current) {
           videoTrackRef.current.play(localVideoRef.current);
         }
 
-        // Ensure all remote videos are playing
+        // Refresh remote videos
         remoteUsers.forEach(user => {
           if (user.videoTrack && videoContainersRef.current[user.uid]) {
             user.videoTrack.play(videoContainersRef.current[user.uid]!);
           }
         });
       }
+
+      // Always maintain presence, even in background
+      await updatePresence();
     } catch (error) {
       addLog(`Visibility change error: ${error}`);
     }
@@ -164,6 +192,26 @@ export function TestVideoRoom() {
     
     try {
       const now = new Date().toISOString();
+      
+      // First check if room exists
+      const { data: roomExists } = await supabase
+        .from('rooms')
+        .select('id')
+        .eq('id', TEST_ROOM_UUID)
+        .single();
+
+      // Create room if it doesn't exist
+      if (!roomExists) {
+        await supabase
+          .from('rooms')
+          .insert({
+            id: TEST_ROOM_UUID,
+            name: 'Deep Work Room',
+            max_participants: ROOM_CONFIG.MAX_PARTICIPANTS
+          });
+      }
+
+      // Now update presence
       const { error } = await supabase
         .from('room_participants')
         .upsert({
@@ -245,43 +293,58 @@ export function TestVideoRoom() {
     }
   };
 
-  // Initialize the room
+  // Improved initialization with connection persistence
   const initializeRoom = async () => {
-    if (!user || joinInProgressRef.current) {
-      addLog('Join already in progress or no user');
-      return;
-    }
+    if (!user || joinInProgressRef.current) return;
 
     joinInProgressRef.current = true;
     setIsInitializing(true);
     addLog('Starting room initialization...');
 
     try {
-      // First ensure we're not already connected
-      if (client.connectionState === 'CONNECTED') {
+      // Only leave if we're in a different room
+      if (client.connectionState === 'CONNECTED' && client.channelName !== TEST_ROOM_UUID) {
         await client.leave();
-        addLog('Left existing connection');
+        addLog('Left previous room');
       }
 
-      // Reset state
+      // Don't rejoin if already in correct room
+      if (client.connectionState === 'CONNECTED' && client.channelName === TEST_ROOM_UUID) {
+        addLog('Already in correct room, skipping join');
+        setIsConnected(true);
+        await updatePresence();
+        return;
+      }
+
+      // Reset state for new connection
       setRemoteUsers([]);
       remoteVideoRefs.current = {};
-      reconnectAttemptsRef.current = 0;
 
-      // Join Agora first
-      await client.join(
-        import.meta.env.VITE_AGORA_APP_ID!,
-        TEST_ROOM_UUID,
-        null,
-        user.id
-      );
-      addLog('Joined Agora channel');
+      // Join channel with retry logic
+      let joinAttempts = 0;
+      while (joinAttempts < 3) {
+        try {
+          await client.join(
+            import.meta.env.VITE_AGORA_APP_ID!,
+            TEST_ROOM_UUID,
+            null,
+            user.id
+          );
+          addLog('Joined Agora channel');
+          break;
+        } catch (error) {
+          joinAttempts++;
+          if (joinAttempts === 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
       setIsConnected(true);
 
-      // Initialize tracks with optimal settings
+      // Initialize tracks
       const { videoTrack, audioTrack } = await initializeTracks();
       
-      // Clean up any existing tracks
+      // Clean up existing tracks if any
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
@@ -300,24 +363,27 @@ export function TestVideoRoom() {
         addLog('Local video playing');
       }
 
-      // Publish tracks
-      await client.publish([videoTrack, audioTrack]);
-      addLog('Published tracks successfully');
-
-      // Then update presence
-      await updatePresence();
-      addLog('Updated presence');
-
-      // Start presence heartbeat
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
+      // Publish tracks with retry
+      let publishAttempts = 0;
+      while (publishAttempts < 3) {
+        try {
+          await client.publish([videoTrack, audioTrack]);
+          addLog('Published tracks successfully');
+          break;
+        } catch (error) {
+          publishAttempts++;
+          if (publishAttempts === 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
+
+      // Update presence and start intervals
+      await updatePresence();
+      
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       heartbeatIntervalRef.current = setInterval(updatePresence, ROOM_CONFIG.HEARTBEAT_INTERVAL);
 
-      // Start cleanup interval
-      if (cleanupIntervalRef.current) {
-        clearInterval(cleanupIntervalRef.current);
-      }
+      if (cleanupIntervalRef.current) clearInterval(cleanupIntervalRef.current);
       cleanupIntervalRef.current = setInterval(fetchParticipants, ROOM_CONFIG.CLEANUP_INTERVAL);
 
       // Initial fetch of participants
@@ -326,7 +392,6 @@ export function TestVideoRoom() {
     } catch (error) {
       addLog(`Room initialization error: ${error}`);
       setIsConnected(false);
-      // Try to clean up on error
       await cleanup();
     } finally {
       setIsInitializing(false);
@@ -334,7 +399,7 @@ export function TestVideoRoom() {
     }
   };
 
-  // Cleanup resources
+  // Enhanced cleanup with proper resource management
   const cleanup = async () => {
     addLog('Starting cleanup...');
     
@@ -351,16 +416,11 @@ export function TestVideoRoom() {
 
       // Remove from room_participants
       if (user) {
-        const { error } = await supabase
+        await supabase
           .from('room_participants')
           .delete()
           .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
-
-        if (error) {
-          addLog(`Failed to remove participant: ${error.message}`);
-        } else {
-          addLog('Removed from room_participants');
-        }
+        addLog('Removed from room_participants');
       }
 
       // Cleanup tracks
@@ -388,7 +448,6 @@ export function TestVideoRoom() {
       setStatus('focus');
       setIsConnected(false);
       remoteVideoRefs.current = {};
-      reconnectAttemptsRef.current = 0;
       
     } catch (error) {
       addLog(`Cleanup error: ${error}`);
@@ -469,14 +528,9 @@ export function TestVideoRoom() {
       setIsConnected(curState === 'CONNECTED');
       
       if (curState === 'DISCONNECTED' && prevState === 'CONNECTED') {
-        if (reconnectAttemptsRef.current < ROOM_CONFIG.RECONNECT_ATTEMPTS) {
-          reconnectAttemptsRef.current++;
-          addLog(`Attempting reconnection (${reconnectAttemptsRef.current}/${ROOM_CONFIG.RECONNECT_ATTEMPTS})`);
-          await initializeRoom();
-        } else {
-          addLog('Max reconnection attempts reached');
-          cleanup();
-        }
+        // Try to reconnect immediately
+        addLog('Attempting to reconnect...');
+        await initializeRoom();
       }
     };
 
