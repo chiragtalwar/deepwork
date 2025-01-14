@@ -1,13 +1,15 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Icons } from '../ui/icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgoraRoom } from '../../hooks/useAgoraRoom';
 import { useRoomPresence } from '../../hooks/useRoomPresence';
+import { FocusProgress } from './FocusProgress';
 
 // Room ID - would come from your room management system
 const TEST_ROOM_UUID = '123e4567-e89b-12d3-a456-426614174000';
+const TEST_ROOM_DURATION = 50; // 50 minutes focus session
 
 export function TestVideoRoom() {
   const { user } = useAuth();
@@ -17,6 +19,7 @@ export function TestVideoRoom() {
   const [isDebugVisible, setIsDebugVisible] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [currentFocusTask, setCurrentFocusTask] = useState('');
+  const [startTime] = useState(() => new Date()); // Initialize start time when component mounts
   
   // Video container refs
   const localVideoRef = useRef<HTMLDivElement>(null);
@@ -84,6 +87,14 @@ export function TestVideoRoom() {
               </div>
               
               <div className="flex items-center gap-4">
+                {/* Focus Progress Timer */}
+                <div className="w-[300px]">
+                  <FocusProgress 
+                    duration={TEST_ROOM_DURATION}
+                    startTime={startTime}
+                  />
+                </div>
+
                 <Button
                   onClick={() => setIsDebugVisible(!isDebugVisible)}
                   variant="ghost"
@@ -208,7 +219,7 @@ export function TestVideoRoom() {
                           className="absolute inset-0" 
                         />
                         {!remoteUser?.videoTrack && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                             <div className="flex flex-col items-center">
                               <Icons.video className="w-6 h-6 text-white/40 mb-2" />
                               <p className="text-white/80 text-sm">Camera not available</p>
@@ -287,16 +298,16 @@ export function TestVideoRoom() {
                     <div className="bg-black/10 rounded-lg p-3">
                       <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
                     </div>
-                  </div>
                 </div>
-              ))}
+              </div>
+            ))}
             </div>
           </div>
         </div>
 
         {/* Version indicator */}
         <div className="fixed bottom-4 right-4 text-white/30 text-sm font-light">
-          Version 8
+          Version 9
         </div>
       </div>
     </div>
