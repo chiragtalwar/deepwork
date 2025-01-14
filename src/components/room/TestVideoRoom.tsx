@@ -183,7 +183,13 @@ export function TestVideoRoom() {
 
               {/* Remote Participants */}
               {participants
-                .filter(p => p.user_id !== user?.id)
+                .filter(p => {
+                  // Filter out:
+                  // 1. Current user
+                  // 2. Participants who have left (no remote user)
+                  const remoteUser = remoteUsers.find(u => u.uid === p.user_id);
+                  return p.user_id !== user?.id && remoteUser;
+                })
                 .slice(0, 4)
                 .map(participant => {
                   const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
@@ -205,9 +211,7 @@ export function TestVideoRoom() {
                           <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                             <div className="flex flex-col items-center">
                               <Icons.video className="w-6 h-6 text-white/40 mb-2" />
-                              <p className="text-white/80 text-sm">
-                                {remoteUser ? 'Camera not available' : 'Connecting...'}
-                              </p>
+                              <p className="text-white/80 text-sm">Camera not available</p>
                             </div>
                           </div>
                         )}
@@ -259,7 +263,10 @@ export function TestVideoRoom() {
                 })}
 
               {/* Empty Slots */}
-              {Array.from({ length: Math.max(0, 4 - (participants.filter(p => p.user_id !== user?.id).length)) }).map((_, i) => (
+              {Array.from({ length: Math.max(0, 4 - (participants.filter(p => {
+                const remoteUser = remoteUsers.find(u => u.uid === p.user_id);
+                return p.user_id !== user?.id && remoteUser;
+              }).length)) }).map((_, i) => (
                 <div key={`empty-${i}`} className="group bg-white/5 backdrop-blur-md rounded-xl overflow-hidden border border-white/5 shadow-lg">
                   <div className="aspect-video bg-black/20 flex items-center justify-center">
                     <div className="flex flex-col items-center">
