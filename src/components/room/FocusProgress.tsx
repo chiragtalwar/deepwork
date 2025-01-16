@@ -10,60 +10,92 @@ export function FocusProgress({ duration, startTime }: FocusProgressProps) {
   const [progress, setProgress] = useState(0);
   const [focusedTime, setFocusedTime] = useState(0);
   const [remainingTime, setRemainingTime] = useState(duration);
+  const [isPreStart, setIsPreStart] = useState(false);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const updateProgress = () => {
       const now = new Date();
-      const elapsedMinutes = (now.getTime() - startTime.getTime()) / (1000 * 60);
-      const newProgress = Math.min((elapsedMinutes / duration) * 100, 100);
-      const newFocusedTime = Math.min(Math.floor(elapsedMinutes), duration);
-      const newRemainingTime = Math.max(duration - newFocusedTime, 0);
+      const startMs = startTime.getTime();
+      const nowMs = now.getTime();
+      const durationMs = duration * 60 * 1000;
+      const elapsedMs = nowMs - startMs;
 
-      setProgress(newProgress);
-      setFocusedTime(newFocusedTime);
-      setRemainingTime(newRemainingTime);
-
-      if (newProgress >= 100) {
-        clearInterval(interval);
+      if (startMs > nowMs) {
+        // Session hasn't started yet
+        setIsPreStart(true);
+        setProgress(0);
+        setFocusedTime(0);
+        setRemainingTime(duration);
+        return;
       }
-    }, 1000);
+
+      // Session has started
+      setIsPreStart(false);
+
+      if (elapsedMs >= durationMs) {
+        // Session is complete
+        setProgress(100);
+        setFocusedTime(duration);
+        setRemainingTime(0);
+        return;
+      }
+
+      // Session is in progress
+      const currentProgress = (elapsedMs / durationMs) * 100;
+      const currentFocusedTime = Math.floor(elapsedMs / (1000 * 60));
+      const currentRemainingTime = Math.ceil((durationMs - elapsedMs) / (1000 * 60));
+
+      setProgress(currentProgress);
+      setFocusedTime(currentFocusedTime);
+      setRemainingTime(currentRemainingTime);
+    };
+
+    // Update immediately and then every second
+    updateProgress();
+    const interval = setInterval(updateProgress, 1000);
 
     return () => clearInterval(interval);
   }, [duration, startTime]);
 
   return (
-    <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-      <div className="flex items-center justify-between mb-3">
+    <div>
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Icons.target className="w-4 h-4 text-emerald-500/70" />
-          <h3 className="text-sm font-medium text-white/80">Focus Progress</h3>
+          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse ring-4 ring-emerald-400/20" />
+          <h3 className="text-sm font-medium text-white/90">Focus Progress</h3>
         </div>
-        <span className="text-2xl font-semibold text-white/90">{Math.round(progress)}%</span>
+        <span className="text-2xl font-semibold text-white/90">
+          {isPreStart ? "0" : Math.round(progress)}%
+        </span>
       </div>
-      
-      {/* Progress Bar */}
-      <div className="h-2 rounded-full bg-white/[0.03] overflow-hidden">
+
+      <div className="h-1.5 rounded-full bg-white/[0.03] overflow-hidden mb-4">
         <div 
-          className="h-full rounded-full bg-gradient-to-r from-emerald-500/50 to-emerald-400/50 transition-all duration-1000"
-          style={{ width: `${progress}%` }}
+          className="h-full rounded-full bg-gradient-to-r from-emerald-500/80 via-emerald-400/80 to-emerald-300/80 transition-all duration-1000"
+          style={{ width: `${isPreStart ? 0 : progress}%` }}
         />
       </div>
 
-      {/* Stats */}
-      <div className="mt-4 flex items-center justify-between text-sm">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center gap-6">
           <div>
-            <p className="text-white/40">Focused Time</p>
-            <p className="text-white/90 font-medium">{focusedTime} minutes</p>
+            <p className="text-white/50 text-xs">Focused Time</p>
+            <p className="text-white/90 font-medium">
+              {focusedTime} minutes
+            </p>
           </div>
           <div>
-            <p className="text-white/40">Remaining</p>
-            <p className="text-white/90 font-medium">{remainingTime} minutes</p>
+            <p className="text-white/50 text-xs">Remaining</p>
+            <p className="text-white/90 font-medium">
+              {remainingTime} minutes
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10">
-          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-sm text-emerald-400">In Focus</span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 shadow-lg shadow-emerald-500/20">
+          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse ring-2 ring-emerald-400/50" />
+          <span className="text-sm font-medium text-emerald-300">
+            {isPreStart ? "Starting Soon" : "In Focus"}
+          </span>
         </div>
       </div>
     </div>

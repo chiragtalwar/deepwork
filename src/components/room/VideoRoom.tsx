@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import AgoraRTC, { ICameraVideoTrack, ILocalTrack, IMicrophoneAudioTrack, IAgoraRTCRemoteUser } from 'agora-rtc-sdk-ng';
-import { Card } from '../ui/card';
 import { Icons } from '../ui/icons';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
-import { ParticipantsList } from './ParticipantsList';
-import { FocusTimer } from './FocusTimer';
-import { ParticipantCard } from './ParticipantCard';
 import { FocusProgress } from './FocusProgress';
 import { supabase } from '../../lib/supabase';
 import { useLoadingState } from '../../hooks/useLoadingState';
@@ -14,6 +10,7 @@ import { useLoadingState } from '../../hooks/useLoadingState';
 interface VideoRoomProps {
   roomId: string;
   displayName: string;
+  duration: number; // Duration in minutes
 }
 
 interface Participant {
@@ -26,35 +23,29 @@ interface Participant {
   current_focus_task?: string;
 }
 
-export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
+export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const navigate = useNavigate();
   const [isInitializing, setIsInitializing] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserTask, setCurrentUserTask] = useState('');
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [roomDuration, setRoomDuration] = useState<number | null>(null);
+  const [roomStartTime, setRoomStartTime] = useState<Date | null>(null);
+  const { isLoading } = useLoadingState();
   
+  // Video refs
   const localVideoRef = useRef<HTMLDivElement>(null);
-  const [client] = useState(() => AgoraRTC.createClient({ 
-    mode: "rtc", 
-    codec: "vp8"
-  }));
-  
+  const [client] = useState(() => AgoraRTC.createClient({ mode: "rtc", codec: "vp8" }));
   const videoTrackRef = useRef<ICameraVideoTrack | null>(null);
   const audioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const mountedRef = useRef(true);
-
-  // Add this state to track component mounting
-  const [isMounted, setIsMounted] = useState(false);
-  const [sessionStartTime] = useState(new Date());
-  const [currentUserTask, setCurrentUserTask] = useState('');
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const { isLoading, withLoading, hasInitialData } = useLoadingState();
-
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
   const remoteVideoRefs = useRef<{ [uid: string]: HTMLDivElement | null }>({});
 
+  // Initialize user and video
   useEffect(() => {
     const getCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -63,11 +54,9 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     getCurrentUser();
   }, []);
 
+  // Video initialization and cleanup
   useEffect(() => {
-    setIsMounted(true);
     mountedRef.current = true;
-
-    // Initialize video only after component is mounted
     const timer = setTimeout(() => {
       if (mountedRef.current) {
         initializeVideo();
@@ -76,26 +65,17 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
 
     return () => {
       mountedRef.current = false;
-      setIsMounted(false);
       clearTimeout(timer);
       cleanup();
     };
   }, []);
 
+  // Initialize video function
   const initializeVideo = async () => {
     try {
       setIsInitializing(true);
+      await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, null);
       
-      // 1. Join channel first
-      await client.join(
-        import.meta.env.VITE_AGORA_APP_ID!,
-        roomId,
-        null,
-        null
-      );
-      console.log('Joined channel:', roomId);
-
-      // 2. Create tracks
       const [videoTrack, audioTrack] = await Promise.all([
         AgoraRTC.createCameraVideoTrack({
           encoderConfig: {
@@ -111,20 +91,14 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         })
       ]);
 
-      // 3. Store tracks
       videoTrackRef.current = videoTrack;
       audioTrackRef.current = audioTrack;
 
-      // 4. Play local video
       if (localVideoRef.current) {
         videoTrack.play(localVideoRef.current);
-        console.log('Local video playing');
       }
 
-      // 5. Publish tracks
       await client.publish([videoTrack, audioTrack]);
-      console.log('Tracks published successfully');
-
       setIsInitializing(false);
     } catch (error) {
       console.error('Error initializing video:', error);
@@ -133,21 +107,15 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     }
   };
 
+  // Cleanup function
   const cleanup = async () => {
-    console.log('Starting cleanup...');
     try {
-      // Cleanup remote users first
       remoteUsers.forEach(user => {
-        if (user.videoTrack) {
-          user.videoTrack.stop();
-        }
-        if (user.audioTrack) {
-          user.audioTrack.stop();
-        }
+        if (user.videoTrack) user.videoTrack.stop();
+        if (user.audioTrack) user.audioTrack.stop();
       });
       setRemoteUsers([]);
 
-      // Then cleanup local tracks
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
@@ -157,7 +125,6 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         audioTrackRef.current.close();
       }
 
-      // Finally leave the channel
       if (client.connectionState === 'CONNECTED') {
         await client.leave();
       }
@@ -166,15 +133,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     }
   };
 
-  // Hide nav bar
-  useEffect(() => {
-    const mainNav = document.querySelector('nav');
-    if (mainNav) mainNav.classList.add('hidden');
-    return () => {
-      if (mainNav) mainNav.classList.remove('hidden');
-    };
-  }, []);
-
+  // Handle video/audio toggles
   const handleVideoToggle = async () => {
     try {
       if (videoTrackRef.current) {
@@ -197,9 +156,9 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     }
   };
 
+  // Handle room exit
   const handleLeave = async () => {
     try {
-      // Clean up local tracks first
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
@@ -208,43 +167,39 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         audioTrackRef.current.stop();
         audioTrackRef.current.close();
       }
-      
-      // Navigate after cleanup
       navigate('/rooms');
     } catch (error) {
       console.error('Error leaving room:', error);
-      navigate('/rooms'); // Navigate anyway
+      navigate('/rooms');
     }
   };
 
+  // Task update handler
+  const handleTaskUpdate = async (newTask: string) => {
+    try {
+      await supabase
+        .from('room_participants')
+        .update({ current_focus_task: newTask })
+        .eq('room_id', roomId)
+        .eq('user_id', currentUserId);
 
-  const handleTaskUpdate = (newTask: string) => {
-    setParticipants(prev => 
-      prev.map(p => 
-        p.id === currentUserId 
-          ? { ...p, current_focus_task: newTask }
-          : p
-      )
-    );
+      setCurrentUserTask(newTask);
+    } catch (error) {
+      console.error('Error updating task:', error);
+    }
   };
 
+  // Fetch participants
   const fetchParticipants = async () => {
     if (!mountedRef.current || !roomId) return;
     
     try {
-      console.log('Fetching participants for room:', roomId);
-      
       const { data: roomParticipants, error: roomError } = await supabase
         .from('room_participants')
         .select('user_id')
         .eq('room_id', roomId);
 
-      if (roomError) {
-        console.error('Error fetching room participants:', roomError);
-        return;
-      }
-
-      console.log('Room participants:', roomParticipants);
+      if (roomError) throw roomError;
 
       if (!roomParticipants?.length) {
         setParticipants([]);
@@ -256,10 +211,7 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
         .select('*')
         .in('id', roomParticipants.map(p => p.user_id));
 
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError);
-        return;
-      }
+      if (profilesError) throw profilesError;
 
       if (mountedRef.current && profiles) {
         setParticipants(profiles);
@@ -269,88 +221,10 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     }
   };
 
-  useEffect(() => {
-    mountedRef.current = true;
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mountedRef.current && !isLoading) {
-        fetchParticipants();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    fetchParticipants();
-
-    return () => {
-      mountedRef.current = false;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [roomId]);
-
-  // Add event handlers for remote users
-  useEffect(() => {
-    if (!client) return;
-
-    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      console.log(`Remote user ${user.uid} published ${mediaType}`);
-      
-      try {
-        // Subscribe to the remote user
-        await client.subscribe(user, mediaType);
-        console.log('Subscribed to remote user:', user.uid);
-
-        if (mediaType === 'video') {
-          setRemoteUsers(prev => {
-            // Check if user already exists
-            if (!prev.find(u => u.uid === user.uid)) {
-              return [...prev, user];
-            }
-            return prev;
-          });
-
-          // Ensure DOM is ready before playing
-          if (remoteVideoRefs.current[user.uid]) {
-            user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
-            console.log('Playing remote video for user:', user.uid);
-          }
-        }
-
-        if (mediaType === 'audio') {
-          user.audioTrack?.play();
-          console.log('Playing remote audio for user:', user.uid);
-        }
-      } catch (error) {
-        console.error('Error handling remote user:', error);
-      }
-    };
-
-    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
-      console.log('User left:', user.uid);
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    };
-
-    const handleUserUnpublished = (user: IAgoraRTCRemoteUser) => {
-      console.log('User unpublished:', user.uid);
-      client.unsubscribe(user);
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    };
-
-    // Add all event listeners
-    client.on('user-published', handleUserPublished);
-    client.on('user-left', handleUserLeft);
-    client.on('user-unpublished', handleUserUnpublished);
-
-    return () => {
-      client.off('user-published', handleUserPublished);
-      client.off('user-left', handleUserLeft);
-      client.off('user-unpublished', handleUserUnpublished);
-    };
-  }, [client]);
-
+  // Set up participants subscription
   useEffect(() => {
     if (!roomId) return;
 
-    // Subscribe to room_participants changes
     const subscription = supabase
       .channel(`room:${roomId}`)
       .on('postgres_changes', 
@@ -361,7 +235,6 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
           filter: `room_id=eq.${roomId}`
         }, 
         () => {
-          // Fetch participants when changes occur
           fetchParticipants();
         }
       )
@@ -372,10 +245,49 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     };
   }, [roomId]);
 
-  // Add this function to handle room joining
+  // Join room
   const joinRoom = async () => {
     try {
-      // Add user to room_participants
+      // Fetch room details with correct fields
+      const { data: room, error: roomError } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', roomId)
+        .single();
+
+      console.log('=== Room Debug Info ===');
+      console.log('Room data:', room);
+      console.log('Current time:', new Date().toLocaleString());
+      console.log('Room start time:', room?.start_time);
+      console.log('Room duration:', room?.duration);
+      console.log('Room type:', room?.room_type);
+      console.log('=====================');
+
+      if (roomError) throw roomError;
+      
+      if (!room) {
+        console.error('No room found with id:', roomId);
+        return;
+      }
+
+      // Parse the start time from the room data
+      const startTimeFromDB = room.start_time ? new Date(room.start_time) : null;
+      
+      if (!startTimeFromDB || isNaN(startTimeFromDB.getTime())) {
+        console.error('Invalid start time from DB:', room.start_time);
+        return;
+      }
+
+      if (!room.duration) {
+        console.error('No duration found for room');
+        return;
+      }
+
+      console.log('Using room duration:', room.duration);
+      setRoomDuration(room.duration);
+      setRoomStartTime(startTimeFromDB);
+
+      // Then join as participant
       const { error } = await supabase
         .from('room_participants')
         .upsert({
@@ -385,26 +297,63 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
           is_focused: true
         });
 
-      if (error) {
-        console.error('Error joining room:', error);
-        return;
-      }
-
-      // Then initialize video
+      if (error) throw error;
       await initializeVideo();
     } catch (error) {
       console.error('Error in joinRoom:', error);
     }
   };
 
-  // Update useEffect to use joinRoom
+  // Add effect to monitor roomStartTime changes
+  useEffect(() => {
+    console.log('Room start time updated:', roomStartTime);
+  }, [roomStartTime]);
+
+  // Handle remote users
+  useEffect(() => {
+    if (!client) return;
+
+    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      await client.subscribe(user, mediaType);
+
+      if (mediaType === 'video') {
+        setRemoteUsers(prev => {
+          if (!prev.find(u => u.uid === user.uid)) {
+            return [...prev, user];
+          }
+          return prev;
+        });
+
+        if (remoteVideoRefs.current[user.uid]) {
+          user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+        }
+      }
+
+      if (mediaType === 'audio') {
+        user.audioTrack?.play();
+      }
+    };
+
+    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    };
+
+    client.on('user-published', handleUserPublished);
+    client.on('user-left', handleUserLeft);
+
+    return () => {
+      client.off('user-published', handleUserPublished);
+      client.off('user-left', handleUserLeft);
+    };
+  }, [client]);
+
+  // Join room on mount
   useEffect(() => {
     if (!currentUserId || !roomId) return;
     
     joinRoom();
 
     return () => {
-      // Cleanup: Remove from room_participants when leaving
       supabase
         .from('room_participants')
         .delete()
@@ -417,35 +366,87 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
     };
   }, [currentUserId, roomId]);
 
+  // Main render
   return (
-    <div className="min-h-screen bg-[#0a0f1a]">
+    <div className="fixed inset-0 z-50">
+      <div 
+        className="min-h-screen relative bg-cover bg-center bg-fixed"
+        style={{ 
+          backgroundImage: 'url("/assets/pic8.png")',
+        }}
+      >
+        {/* Elegant dark overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-black/30 via-black/20 to-black/30 backdrop-blur-[2px]" />
+        
+        {/* Main content */}
+        <div className="relative z-10 h-screen flex flex-col p-6">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-10">
-        <div className="flex items-center justify-between px-6 h-16">
-          <FocusTimer duration={60} onComplete={() => console.log('Session complete!')} />
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-2 px-4 py-2 text-white/70 hover:text-white/90 hover:bg-white/5"
-              onClick={handleLeave}
-            >
-              <Icons.logOut className="h-4 w-4" />
-              <span>Leave Session</span>
-            </Button>
+          <div className="flex justify-between items-start">
+            {/* Left: Title */}
+            <div>
+              <h1 className="text-2xl font-semibold text-white tracking-tight drop-shadow-lg">
+                Deep Work Room
+              </h1>
+              <p className="text-white/90 mt-1 tracking-wide font-light">
+                Focus together, achieve more
+              </p>
+            </div>
+
+            {/* Top Right: Yoda Guide */}
+            <div className="absolute top-0 right-0 flex items-start">
+              <div className="relative flex items-start">
+                {/* Yoda's Message */}
+                <div className="relative mr-1 mt-20">
+                  <div className="space-y-1.3">
+                    <p className="text-blue-50/90 text-sm font-medium">
+                      Welcome <span className="text-white">*Members*</span>
+                    </p>
+                    <p className="text-blue-50/80 text-sm">
+                      No introductions needed—just relax!
+                    </p>
+                    <p className="text-blue-50/80 text-sm">
+                      And remember:  
+                    </p>
+                    <p className="text-white font-medium text-sm italic">
+                      "May the focus be with you"
+                    </p>
+                  </div>
+                </div>
+
+                {/* Yoda Image */}
+                <img 
+                  src="/assets/focuso.png" 
+                  alt="Focus Guide" 
+                  className="w-40 h-40 object-contain drop-shadow-2xl transform translate-y-14"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Center: Progress Card */}
+          <div className="absolute left-1/2 top-6 -translate-x-1/2">
+            <div className="w-[320px] bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl p-1">
+              <div className="bg-gradient-to-b from-black/20 to-black/5 rounded-lg p-4 border border-white/[0.06]">
+                {roomStartTime && roomDuration ? (
+                  <FocusProgress 
+                    duration={roomDuration}
+                    startTime={roomStartTime}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center p-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-white/30" />
+                  </div>
+                )}
+              </div>
           </div>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <div className="flex h-screen">
-        {/* Left: Video + Focus Progress */}
-        <div className="flex-1 p-10 pt-24">
-          <div className="max-w-3xl mx-auto space-y-6">
-            {/* Video Container */}
-            <div className="grid grid-cols-2 gap-4 auto-rows-fr">
-              {/* Local Video */}
-              <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
+          {/* Main Grid */}
+          <div className="flex-1 flex items-center justify-center mt-16">
+            <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
+              {/* Current User Card */}
+              <div className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
+                <div className="aspect-video bg-black/40 relative">
                 <div ref={localVideoRef} className="absolute inset-0" />
                 
                 {/* Loading State */}
@@ -458,36 +459,8 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
                   </div>
                 )}
 
-                {/* Error State */}
-                {error && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                    <div className="text-center p-6 max-w-md">
-                      <Icons.check className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                      <p className="text-white/90 mb-4">{error}</p>
-                      <div className="text-sm text-white/60 mb-6">
-                        <p>Troubleshooting steps:</p>
-                        <ul className="list-disc list-inside mt-2">
-                          <li>Check if camera is being used by another app</li>
-                          <li>Ensure camera permissions are granted</li>
-                          <li>Try refreshing the page</li>
-                          <li>Try a different browser</li>
-                        </ul>
-                      </div>
-                      <Button 
-                        onClick={() => {
-                          setError(null);
-                          initializeVideo();
-                        }}
-                        className="bg-white/10 hover:bg-white/20"
-                      >
-                        Try Again
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
                 {/* Video Controls */}
-                <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-all duration-300">
+                  <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300">
                   <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
                     <Button
                       variant="ghost"
@@ -515,48 +488,170 @@ export function VideoRoom({ roomId, displayName }: VideoRoomProps) {
                 </div>
               </div>
 
-              {/* Remote Videos */}
-              {remoteUsers.map(user => (
-                <div 
-                  key={user.uid}
-                  className="relative rounded-2xl overflow-hidden bg-black aspect-video"
-                >
-                  <div
-                    ref={el => remoteVideoRefs.current[user.uid] = el}
+                <div className="p-4">
+                  {/* Profile Header */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                      <span className="text-sky-300 font-medium">
+                        {participants.find(p => p.id === currentUserId)?.full_name?.[0] || 'Y'}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate">
+                        {participants.find(p => p.id === currentUserId)?.full_name || 'You'}
+                      </h3>
+                      <p className="text-sky-200/60 text-sm truncate">
+                        {participants.find(p => p.id === currentUserId)?.focus_goal || 'Deep Focus Enthusiast'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Profile Info */}
+                  <div className="space-y-2.5">
+                    <div className="bg-black/20 rounded-lg p-3">
+                      <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
+                      <p className="text-white/90 text-sm line-clamp-2">
+                        {participants.find(p => p.id === currentUserId)?.bio || 'No bio added yet'}
+                      </p>
+                    </div>
+
+                    <div className="bg-black/20 rounded-lg p-3">
+                      <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
+                      <p className="text-white/90 text-sm">
+                        {participants.find(p => p.id === currentUserId)?.preferred_focus_time || '0'} sessions completed
+                      </p>
+                    </div>
+
+                    {/* Editable Focus Area */}
+                    <div className="bg-black/20 rounded-lg p-3">
+                      <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={currentUserTask}
+                          onChange={(e) => setCurrentUserTask(e.target.value)}
+                          placeholder="What are you working on?"
+                          className="flex-1 bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-sky-500/50 rounded px-1 py-0.5"
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 rounded-full bg-sky-500/10 hover:bg-sky-500/20"
+                          onClick={() => handleTaskUpdate(currentUserTask)}
+                        >
+                          <Icons.check className="h-3 w-3 text-sky-400" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Remote Participants */}
+              {participants
+                .filter(p => p.id !== currentUserId)
+                .map(participant => (
+                  <div key={participant.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
+                    <div className="aspect-video bg-black/40 relative">
+                      <div 
+                        ref={el => {
+                          const remoteUser = remoteUsers.find(u => u.uid === participant.id);
+                          if (el && remoteUser?.videoTrack) {
+                            remoteUser.videoTrack.play(el);
+                          }
+                          remoteVideoRefs.current[participant.id] = el;
+                        }}
                     className="absolute inset-0"
                   />
+                    </div>
+
+                    <div className="p-4">
+                      {/* Profile Header */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                          <span className="text-sky-300 font-medium">
+                            {participant.full_name?.[0] || 'P'}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-white font-medium truncate">
+                            {participant.full_name}
+                          </h3>
+                          <p className="text-sky-200/60 text-sm truncate">
+                            {participant.focus_goal || 'Deep Focus Enthusiast'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Profile Info */}
+                      <div className="space-y-2.5">
+                        <div className="bg-black/20 rounded-lg p-3">
+                          <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
+                          <p className="text-white/90 text-sm line-clamp-2">
+                            {participant.bio || 'No bio added yet'}
+                          </p>
+                        </div>
+
+                        <div className="bg-black/20 rounded-lg p-3">
+                          <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
+                          <p className="text-white/90 text-sm">
+                            {participant.preferred_focus_time || '0'} sessions completed
+                          </p>
+                        </div>
+
+                        <div className="bg-black/20 rounded-lg p-3">
+                          <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                          <p className="text-white/90 text-sm">
+                            {participant.current_focus_task || 'Not specified'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+              {/* Empty Slots */}
+              {Array.from({ length: Math.max(0, 4 - participants.length) }).map((_, i) => (
+                <div key={`empty-${i}`} className="group bg-white/5 backdrop-blur-md rounded-xl overflow-hidden border border-white/5 shadow-lg">
+                  <div className="aspect-video bg-black/20 flex items-center justify-center">
+                    <div className="flex flex-col items-center">
+                      <Icons.users className="w-8 h-8 text-white/20 mb-2" />
+                      <p className="text-white/40 text-sm">Empty Seat</p>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                        <Icons.user className="w-5 h-5 text-white/20" />
+                      </div>
+                      <div>
+                        <h3 className="text-white/40 font-medium">Available Spot</h3>
+                        <p className="text-white/30 text-sm">Waiting for participant...</p>
+                      </div>
+                    </div>
+                    <div className="bg-black/10 rounded-lg p-3">
+                      <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-
-            {/* Focus Progress */}
-            <FocusProgress 
-              duration={60} 
-              startTime={sessionStartTime}
-            />
-          </div>
-        </div>
-
-        {/* Right: Participants */}
-        <div className="w-[380px] bg-[#0c1220] border-l border-white/[0.08] p-8 pt-24">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-base font-medium text-white/90">Participants</h2>
-            <span className="text-sm text-white/40">1 of 5</span>
           </div>
 
-          <div className="grid gap-3">
-            {participants.map((participant: Participant) => (
-              <ParticipantCard
-                key={participant.id}
-                participant={participant}
-                isCurrentUser={participant.id === currentUserId}
-                onTaskUpdate={handleTaskUpdate}
-              />
-            ))}
+          {/* Bottom Right: Leave Button */}
+          <div className="fixed bottom-6 right-6">
+            <Button 
+              onClick={handleLeave}
+              variant="destructive"
+              size="sm"
+              className="bg-red-500/20 hover:bg-red-500/30 text-white border-0"
+            >
+              <Icons.logOut className="w-4 h-4 mr-2" />
+              Leave Room
+            </Button>
           </div>
         </div>
       </div>
     </div>
   );
 } 
-

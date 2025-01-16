@@ -75,67 +75,64 @@ export function TestVideoRoom() {
         {/* Main content */}
         <div className="relative z-10 h-screen flex flex-col p-6">
           {/* Header */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-3xl font-semibold text-white tracking-tight drop-shadow-lg">
-                  Deep Work Room
-                </h1>
-                <p className="text-white/90 mt-1 tracking-wide font-light">
-                  Focus together, achieve more
-                </p>
-              </div>
-              
-              <div className="flex items-center gap-4">
-                {/* Focus Progress Timer */}
-                <div className="w-[300px]">
-                  <FocusProgress 
-                    duration={TEST_ROOM_DURATION}
-                    startTime={startTime}
-                  />
-                </div>
-
-                <Button
-                  onClick={() => setIsDebugVisible(!isDebugVisible)}
-                  variant="ghost"
-                  size="sm"
-                  className="text-white/80 hover:text-white hover:bg-white/10"
-                >
-                  <Icons.activity className="w-4 h-4 mr-2" />
-                  Debug
-                </Button>
-
-                <Button 
-                  onClick={handleLeaveRoom}
-                  variant="destructive"
-                  size="sm"
-                  className="bg-red-500/20 hover:bg-red-500/30 text-white border-0"
-                >
-                  <Icons.logOut className="w-4 h-4 mr-2" />
-                  Leave Room
-                </Button>
-              </div>
+          <div className="flex justify-between items-start">
+            {/* Left: Title */}
+            <div>
+              <h1 className="text-2xl font-semibold text-white tracking-tight drop-shadow-lg">
+                Deep Work Room
+              </h1>
+              <p className="text-white/90 mt-1 tracking-wide font-light">
+                Focus together, achieve more
+              </p>
             </div>
 
-            {/* Debug Panel */}
-            {isDebugVisible && (
-              <div className="mt-4 bg-black/30 backdrop-blur-md rounded-xl border border-white/10">
-                <div className="p-4 text-sm space-y-1">
-                  <p className="text-white/90">Connection State: <span className="text-sky-400">{client.connectionState}</span></p>
-                  <p className="text-white/90">Remote Users: <span className="text-sky-400">{remoteUsers.length}</span></p>
-                  <p className="text-white/90">Participants: <span className="text-sky-400">{participants.length}</span></p>
-                  <div className="text-white/70 mt-2 space-y-1">
-                    {debugLogs.map((log, i) => (
-                      <div key={i} className="font-mono text-xs">{log}</div>
-                    ))}
+            {/* Top Right: Yoda Guide */}
+            <div className="absolute top-0 right-0 flex items-start">
+              <div className="relative flex items-start">
+                {/* Yoda's Message */}
+                <div className="relative mr-1 mt-20">
+                  <div className="space-y-1.3">
+                    <p className="text-blue-50/90 text-sm font-medium">
+                      Welcome <span className="text-white">Members</span>
+                    </p>
+                    <p className="text-blue-50/80 text-sm">
+                      No introductions needed—just relax!
+
+                    </p>
+                    <p className="text-blue-50/80 text-sm">
+                      And remember:  
+
+                    </p>
+                    <p className="text-white font-medium text-sm italic">
+                      "May the focus be with you"
+                    </p>
                   </div>
                 </div>
+
+                {/* Yoda Image */}
+                <img 
+                  src="/assets/focuso.png" 
+                  alt="Focus Guide" 
+                  className="w-40 h-40 object-contain drop-shadow-2xl transform translate-y-14"
+                />
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* Center: Progress Card */}
+          <div className="absolute left-1/2 top-6 -translate-x-1/2">
+            <div className="w-[320px] bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl p-1">
+              <div className="bg-gradient-to-b from-black/20 to-black/5 rounded-lg p-4 border border-white/[0.06]">
+                <FocusProgress 
+                  duration={TEST_ROOM_DURATION}
+                  startTime={startTime}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Main Grid */}
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
               {/* Current User Card */}
               <div className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
@@ -303,11 +300,19 @@ export function TestVideoRoom() {
             ))}
             </div>
           </div>
-        </div>
 
-        {/* Version indicator */}
-        <div className="fixed bottom-4 right-4 text-white/30 text-sm font-light">
-          Version 9
+          {/* Bottom Right: Leave Button */}
+          <div className="fixed bottom-6 right-6">
+            <Button 
+              onClick={handleLeaveRoom}
+              variant="destructive"
+              size="sm"
+              className="bg-red-500/20 hover:bg-red-500/30 text-white border-0"
+            >
+              <Icons.logOut className="w-4 h-4 mr-2" />
+              Leave Room
+            </Button>
+          </div>
         </div>
       </div>
     </div>
