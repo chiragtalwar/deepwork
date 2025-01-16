@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { FocusProgress } from './FocusProgress';
 import { supabase } from '../../lib/supabase';
 import { useLoadingState } from '../../hooks/useLoadingState';
+import { SessionCompleteModal } from './SessionCompleteModal';
 
 interface VideoRoomProps {
   roomId: string;
@@ -35,6 +36,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const [roomDuration, setRoomDuration] = useState<number | null>(null);
   const [roomStartTime, setRoomStartTime] = useState<Date | null>(null);
   const { isLoading } = useLoadingState();
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   
   // Video refs
   const localVideoRef = useRef<HTMLDivElement>(null);
@@ -366,6 +368,100 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     };
   }, [currentUserId, roomId]);
 
+  // Handle session completion
+  const handleSessionComplete = async () => {
+    try {
+      // 1. Update user stats
+      const { data: existingStats, error: statsError } = await supabase
+        .from('user_stats')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .single();
+
+      if (statsError && statsError.code !== 'PGRST116') throw statsError;
+
+      const lastSessionDate = existingStats?.last_session_date ? new Date(existingStats.last_session_date) : null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      // Calculate streak
+      let newStreak = 1;
+      if (lastSessionDate) {
+        if (lastSessionDate.getTime() === today.getTime()) {
+          newStreak = existingStats.current_streak; // Maintain streak
+        } else if (lastSessionDate.getTime() === yesterday.getTime()) {
+          newStreak = existingStats.current_streak + 1; // Increment streak
+        }
+      }
+
+      // Calculate weekly focus time
+      const weekStart = new Date(today);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const weeklyMinutes = (existingStats?.weekly_focus_minutes || 0) + roomDuration;
+
+      const statsData = {
+        user_id: currentUserId,
+        total_sessions: (existingStats?.total_sessions || 0) + 1,
+        current_streak: newStreak,
+        weekly_focus_minutes: weeklyMinutes,
+        last_session_date: today.toISOString(),
+        created_at: existingStats ? undefined : new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // 2. Clean up video resources first
+      if (videoTrackRef.current) {
+        videoTrackRef.current.stop();
+        videoTrackRef.current.close();
+      }
+      if (audioTrackRef.current) {
+        audioTrackRef.current.stop();
+        audioTrackRef.current.close();
+      }
+
+      // 3. Leave Agora channel
+      if (client.connectionState === 'CONNECTED') {
+        await client.leave();
+      }
+
+      // 4. Remove from room_participants
+      await supabase
+        .from('room_participants')
+        .delete()
+        .match({ room_id: roomId, user_id: currentUserId });
+
+      // 5. Update stats after cleanup
+      const { error: upsertError } = await supabase
+        .from('user_stats')
+        .upsert(statsData);
+
+      if (upsertError) throw upsertError;
+
+      // 6. Finally, navigate to rooms with celebration state
+      navigate('/rooms', { 
+        state: { 
+          showCelebration: true,
+          sessionDuration: roomDuration 
+        } 
+      });
+
+    } catch (error) {
+      console.error('Error completing session:', error);
+      // Even if stats update fails, ensure we cleanup and exit
+      cleanup();
+      navigate('/rooms');
+    }
+  };
+
+  // Handle modal close and redirect
+  const handleCompleteModalClose = () => {
+    setShowCompleteModal(false);
+    navigate('/rooms');
+  };
+
   // Main render
   return (
     <div className="fixed inset-0 z-50">
@@ -431,6 +527,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
                   <FocusProgress 
                     duration={roomDuration}
                     startTime={roomStartTime}
+                    onSessionComplete={handleSessionComplete}
                   />
                 ) : (
                   <div className="flex items-center justify-center p-4">

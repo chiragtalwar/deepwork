@@ -25,7 +25,11 @@ import {
   Trophy, 
   TestTube, 
   Brain,
-  Users
+  Users,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
 } from "lucide-react"
 
 export type Icon = typeof LucideIcon;
@@ -73,5 +77,9 @@ export const Icons = {
   trophy: Trophy, 
   testTube: TestTube, 
   brain: Brain, 
-  users: Users
-} 
+  users: Users,
+  x: X,
+  chevronLeft: ChevronLeft,
+  chevronRight: ChevronRight,
+  calendar: Calendar,
+} as const; 

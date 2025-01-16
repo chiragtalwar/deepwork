@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import { Icons } from '../ui/icons';
 
 interface FocusProgressProps {
-  duration: number; // in minutes
+  duration: number;
   startTime: Date;
+  onSessionComplete: () => void;
 }
 
-export function FocusProgress({ duration, startTime }: FocusProgressProps) {
+export function FocusProgress({ duration, startTime, onSessionComplete }: FocusProgressProps) {
   const [progress, setProgress] = useState(0);
   const [focusedTime, setFocusedTime] = useState(0);
   const [remainingTime, setRemainingTime] = useState(duration);
   const [isPreStart, setIsPreStart] = useState(false);
+  const [hasTriggeredComplete, setHasTriggeredComplete] = useState(false);
 
   useEffect(() => {
     const updateProgress = () => {
@@ -37,6 +39,12 @@ export function FocusProgress({ duration, startTime }: FocusProgressProps) {
         setProgress(100);
         setFocusedTime(duration);
         setRemainingTime(0);
+        
+        // Trigger session complete once
+        if (!hasTriggeredComplete) {
+          setHasTriggeredComplete(true);
+          onSessionComplete();
+        }
         return;
       }
 
@@ -55,7 +63,7 @@ export function FocusProgress({ duration, startTime }: FocusProgressProps) {
     const interval = setInterval(updateProgress, 1000);
 
     return () => clearInterval(interval);
-  }, [duration, startTime]);
+  }, [duration, startTime, hasTriggeredComplete, onSessionComplete]);
 
   return (
     <div>

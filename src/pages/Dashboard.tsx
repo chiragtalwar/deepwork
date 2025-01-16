@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Icons } from '../components/ui/icons';
 import { Progress } from '../components/ui/progress';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, CartesianGrid, BarChart, Bar } from 'recharts';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -9,41 +9,59 @@ import { useLoadingState } from '../hooks/useLoadingState';
 import { Button } from '../components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
-interface Session {
+interface UserStats {
   id: string;
   user_id: string;
-  room_id: string;
-  start_time: string;
-  end_time: string;
-  duration: number;
+  total_sessions: number;
+  current_streak: number;
+  weekly_focus_minutes: number;
+  last_session_date: string;
   created_at: string;
+  updated_at: string;
+}
+
+interface ChartDataPoint {
+  date: string;
+  sessions: number;
+  label?: string;
 }
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [timePeriod, setTimePeriod] = useState<'W' | 'M'>('W');
   const mounted = useRef(true);
   const fetchInProgress = useRef(false);
   const navigate = useNavigate();
+  const [sessionData, setSessionData] = useState<ChartDataPoint[]>([]);
+  const [monthOffset, setMonthOffset] = useState(0);
 
-  const fetchSessions = useCallback(async (isBackgroundRefresh = false) => {
+  const fetchUserData = useCallback(async (isBackgroundRefresh = false) => {
     if (!user || !mounted.current || fetchInProgress.current) return;
     
     fetchInProgress.current = true;
     
     try {
-      const { data, error } = await supabase
-        .from('sessions')
+      // Fetch user stats - get the most recent row
+      const { data: statsData, error: statsError } = await supabase
+        .from('user_stats')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (error) throw error;
-      if (mounted.current && data) {
-        setSessions(data);
+      if (statsError) {
+        console.error('Error fetching user stats:', statsError);
+        return;
+      }
+
+      if (mounted.current && statsData) {
+        setUserStats(statsData);
+        console.log('Updated stats:', statsData);
       }
     } catch (error) {
-      console.error('Error fetching sessions:', error);
+      console.error('Error fetching user data:', error);
     } finally {
       if (mounted.current) {
         fetchInProgress.current = false;
@@ -51,18 +69,91 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  const fetchSessionData = useCallback(async () => {
+    if (!user || !userStats) return;
+
+    const data: ChartDataPoint[] = [];
+    const now = new Date();
+    
+    if (timePeriod === 'W') {
+      // Get the start of the current week (Monday)
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
+      startOfWeek.setHours(0, 0, 0, 0);
+
+      // If last session was today, that's where the minutes should be shown
+      const lastSessionDate = userStats.last_session_date ? new Date(userStats.last_session_date) : null;
+      const todayStr = now.toISOString().split('T')[0];
+      
+      // Create data for each day of the week (Mon-Sun)
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(startOfWeek);
+        date.setDate(startOfWeek.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        // Only show focus time on the day of the last session
+        let hours = 0;
+        if (lastSessionDate && dateStr === lastSessionDate.toISOString().split('T')[0]) {
+          hours = userStats.weekly_focus_minutes / 60;
+        }
+        
+        data.push({
+          date: dateStr,
+          sessions: Math.round(hours * 10) / 10, // Round to 1 decimal
+          label: date.toLocaleDateString('en-US', { weekday: 'short' })
+        });
+      }
+    } else {
+      // Monthly view - show last 6 months with offset
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() + monthOffset);
+      startDate.setDate(1);
+      
+      // Get the month of the last session
+      const lastSessionDate = userStats.last_session_date ? new Date(userStats.last_session_date) : null;
+      const lastSessionMonth = lastSessionDate ? lastSessionDate.getMonth() : -1;
+      const lastSessionYear = lastSessionDate ? lastSessionDate.getFullYear() : -1;
+      
+      for (let i = -5; i <= 0; i++) {
+        const date = new Date(startDate);
+        date.setMonth(startDate.getMonth() + i);
+        
+        // Only show focus time in the month of the last session
+        let hours = 0;
+        if (lastSessionDate && 
+            date.getMonth() === lastSessionMonth && 
+            date.getFullYear() === lastSessionYear) {
+          hours = userStats.weekly_focus_minutes / 60;
+        }
+        
+        data.push({
+          date: date.toISOString().split('T')[0],
+          sessions: Math.round(hours * 10) / 10,
+          label: date.toLocaleDateString('en-US', { month: 'short' })
+        });
+      }
+    }
+
+    setSessionData(data);
+  }, [user, userStats, timePeriod, monthOffset]);
+
+  // Fetch session data when time period changes
+  useEffect(() => {
+    fetchSessionData();
+  }, [fetchSessionData, timePeriod]);
+
   // Initial load effect
   useEffect(() => {
     if (authLoading) return;
     if (!user) return;
 
     mounted.current = true;
-    fetchSessions(false);
+    fetchUserData(false);
 
     return () => {
       mounted.current = false;
     };
-  }, [user, authLoading, fetchSessions]);
+  }, [user, authLoading, fetchUserData]);
 
   // Visibility change effect
   useEffect(() => {
@@ -70,7 +161,7 @@ export default function Dashboard() {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && mounted.current) {
-        fetchSessions(true);
+        fetchUserData(true);
       }
     };
 
@@ -79,7 +170,7 @@ export default function Dashboard() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user, fetchSessions]);
+  }, [user, fetchUserData]);
 
   // Show loading state only during initial auth check
   if (authLoading) {
@@ -96,64 +187,64 @@ export default function Dashboard() {
   }
 
   const calculateWeeklyFocusTime = () => {
-    const now = new Date();
-    const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
-    weekStart.setHours(0, 0, 0, 0);
+    if (!userStats) return 0;
+    return Math.round(userStats.weekly_focus_minutes / 60); // Convert minutes to hours
+  };
 
-    return sessions
-      .filter(session => new Date(session.start_time) >= weekStart)
-      .reduce((total, session) => total + (session.duration || 0), 0);
+  const getTodayProgress = () => {
+    if (!userStats) return "+0m today";
+    const lastSessionDate = userStats.last_session_date ? new Date(userStats.last_session_date) : null;
+    const today = new Date();
+    
+    // Check if last session was today
+    if (lastSessionDate && 
+        lastSessionDate.toISOString().split('T')[0] === today.toISOString().split('T')[0]) {
+      return `+${userStats.weekly_focus_minutes}m today`;
+    }
+    return "No sessions yet";
   };
 
   const calculateStreak = () => {
-    let streak = 0;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const sessionDays = new Set(
-      sessions.map(session => 
-        new Date(session.start_time).toISOString().split('T')[0]
-      )
-    );
-
-    for (let i = 0; i < 365; i++) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      
-      if (sessionDays.has(dateStr)) {
-        streak++;
-      } else {
-        break;
-      }
-    }
-    
-    return streak;
+    return userStats?.current_streak || 0;
   };
 
   const processContributionData = () => {
     const contributionMap = new Map();
     
-    // Initialize last 52 weeks (1 year) with 0 sessions
+    // Start from January 1st, 2025
+    const startDate = new Date('2025-01-01');
+    const now = new Date();
+    
+    // Fill in all dates from Jan 1st 2025
     for (let i = 0; i < 52 * 7; i++) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
       contributionMap.set(dateStr, 0);
     }
 
-    // Count sessions per day
-    sessions.forEach(session => {
-      const dateStr = new Date(session.start_time).toISOString().split('T')[0];
-      if (contributionMap.has(dateStr)) {
-        contributionMap.set(dateStr, contributionMap.get(dateStr) + 1);
+    // If we have a last session date and it's in 2025, mark that day
+    if (userStats?.last_session_date) {
+      const sessionDate = userStats.last_session_date.split('T')[0];
+      if (contributionMap.has(sessionDate)) {
+        const focusHours = Math.round(userStats.weekly_focus_minutes / 60);
+        contributionMap.set(sessionDate, focusHours);
       }
-    });
+    }
 
-    return Array.from(contributionMap.entries()).map(([date, count]) => ({
+    return Array.from(contributionMap.entries()).map(([date, hours]) => ({
       date,
-      sessions: count
-    })).reverse(); // Reverse to show oldest to newest
+      sessions: hours
+    }));
+  };
+
+  // New color scale function
+  const getCellColor = (intensity: number) => {
+    if (intensity === 0) return 'bg-white/5';
+    if (intensity <= 1) return 'bg-blue-400/20';
+    if (intensity <= 2) return 'bg-blue-400/40';
+    if (intensity <= 3) return 'bg-blue-400/60';
+    return 'bg-blue-400/80';
   };
 
   const getContributionColor = (sessions: number) => {
@@ -164,8 +255,9 @@ export default function Dashboard() {
   };
 
   const contributionData = processContributionData();
-  const weeklyHours = Math.round(calculateWeeklyFocusTime() / 3600); // Convert seconds to hours
+  const weeklyHours = calculateWeeklyFocusTime();
   const currentStreak = calculateStreak();
+  const totalSessions = userStats?.total_sessions || 0;
 
   const calculateWeeklyProgress = () => {
     const weeklyGoal = 10; // 10 hours per week goal
@@ -180,64 +272,157 @@ export default function Dashboard() {
     return "Unstoppable! 🚀";
   };
 
+  const getChartData = (): ChartDataPoint[] => {
+    return sessionData;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#a5b9c5] via-[#8da3b0] to-[#6b8795]">
       <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/10 animate-gradient" />
 
-      <div className="relative container mx-auto px-4 py-8 pt-24">
-
+      <div className="relative container mx-auto px-4 py-4 pt-12">
         <div className="flex items-center justify-between mb-12">
-          <div className="relative">
-            <h1 className="text-6xl font-light tracking-tight text-white mb-3 animate-fade-in">
-              Your Progress
-            </h1>
-            <p className="text-white/80 text-xl font-light animate-fade-in-delay">
-              Track your deep work journey
-            </p>
-          </div>
-          <div className="px-6 py-3 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/15 transition-all duration-300">
-            <span className="text-white/80 text-sm font-medium">
-              Last updated: {new Date().toLocaleDateString()}
-            </span>
-          </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-3 mb-8">
-          <div className="group relative overflow-hidden rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
-            <div className="px-6 py-5">
-              <div className="flex items-center gap-3 mb-4">
-                <Icons.clock className="h-5 w-5 text-white/90" />
-                <span className="text-white/90 text-lg font-medium">Focus Time</span>
+        <div className="grid gap-4 md:grid-cols-3 mb-4">
+          <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Icons.clock className="h-4 w-4 text-white/90" />
+                <span className="text-white/90 text-base font-medium">Focus Time</span>
               </div>
               
-              <div className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-5xl font-light text-white">
+                    <p className="text-4xl font-light text-white flex items-baseline">
                     {weeklyHours}h
-                    <span className="text-base text-white/60 ml-2">this week</span>
+                      <span className="text-sm text-emerald-400/90 ml-2 font-medium">
+                        {getTodayProgress()}
+                      </span>
+                    </p>
+                    <p className="text-white/60 text-xs mt-0.5">
+                      {weeklyHours > 0 ? "You're making progress! 🚀" : "Let's start focusing!"}
                   </p>
                 </div>
                 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-white/70">Weekly Goal: 10h</span>
-                    <span className="text-white/90">{calculateWeeklyProgress()}%</span>
+                  {/* Time Period Selection and Navigation */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="p-1 rounded-md text-white/60 hover:text-white/90 hover:bg-white/5 transition-all"
+                        onClick={() => timePeriod === 'M' 
+                          ? setMonthOffset(prev => prev - 6)
+                          : console.log('Previous week')}
+                      >
+                        <Icons.chevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        className="p-1 rounded-md text-white/60 hover:text-white/90 hover:bg-white/5 transition-all"
+                        onClick={() => timePeriod === 'M'
+                          ? setMonthOffset(prev => Math.min(prev + 6, 0))
+                          : console.log('Next week')}
+                      >
+                        <Icons.chevronRight className="h-3.5 w-3.5" />
+                      </button>
                   </div>
-                  <div className="relative h-2 bg-black/20 rounded-full overflow-hidden">
-                    <div 
-                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-white/40 to-white/60 rounded-full transition-all duration-700 ease-out"
-                      style={{ width: `${calculateWeeklyProgress()}%` }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                    <div className="flex gap-1 border-l border-white/10 pl-3">
+                      {[
+                        { id: 'W', label: 'Week' },
+                        { id: 'M', label: 'Month' }
+                      ].map(({ id, label }) => (
+                        <button
+                          key={id}
+                          className={`px-2 py-0.5 rounded text-xs font-medium transition-all 
+                            ${timePeriod === id 
+                              ? 'bg-emerald-500/20 text-emerald-400' 
+                              : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+                            }`}
+                          onClick={() => {
+                            setTimePeriod(id as 'W' | 'M');
+                            setMonthOffset(0);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
+                  </div>
+                </div>
+
+                {/* Chart Container */}
+                <div className="flex flex-col w-full">
+                  <div className="h-[70px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sessionData} margin={{ top: 15, right: 0, bottom: 5, left: 0 }}>
+                        <Bar
+                          dataKey="sessions"
+                          fill="#10b981"
+                          radius={[2, 2, 0, 0]}
+                          label={{
+                            position: 'top',
+                            content: (props: any) => {
+                              const value = Number(props.value);
+                              if (!value || value <= 0) return null;
+                              
+                              return (
+                                <text
+                                  x={Number(props.x) + Number(props.width) / 2}
+                                  y={Number(props.y) - 6}
+                                  fill="#10b981"
+                                  textAnchor="middle"
+                                  fontSize={10}
+                                  fontWeight="500"
+                                >
+                                  {value}h
+                                </text>
+                              );
+                            }
+                          }}
+                        />
+                        <YAxis 
+                          hide 
+                          domain={[0, (dataMax: number) => Math.max(dataMax * 1.3, 1)]} 
+                        />
+                        <XAxis
+                          dataKey="label"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{
+                            fill: 'rgba(255,255,255,0.6)',
+                            fontSize: 10,
+                            dy: 8
+                          }}
+                        />
+                        <Tooltip
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-[#1a2e3c] px-2.5 py-1.5 rounded-lg border border-white/10 shadow-xl">
+                                  <p className="text-[10px] text-white/70 mb-0.5">
+                                    {data.label}
+                                  </p>
+                                  <p className="text-xs font-medium text-emerald-400">
+                                    {payload[0].value}h focused
+                                  </p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                          cursor={{ fill: '#ffffff08' }}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="group relative overflow-hidden rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
-            <div className="px-6 py-5">
+          <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-4 py-3">
               <div className="flex items-center gap-3 mb-4">
                 <Icons.flame className="h-5 w-5 text-orange-400" />
                 <span className="text-white/90 text-lg font-medium">Current Streak</span>
@@ -255,15 +440,15 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="group relative overflow-hidden rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
-            <div className="px-6 py-5">
+          <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-4 py-3">
               <div className="flex items-center gap-3 mb-4">
                 <Icons.target className="h-5 w-5 text-emerald-400" />
                 <span className="text-white/90 text-lg font-medium">Total Sessions</span>
               </div>
               
               <div className="space-y-3">
-                <p className="text-5xl font-light text-white">{sessions.length}</p>
+                <p className="text-5xl font-light text-white">{totalSessions}</p>
                 <div className="flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-emerald-400" />
                   <p className="text-white/70 text-sm">Lifetime focus sessions</p>
@@ -273,84 +458,168 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 p-6 mb-8 overflow-x-auto">
-          <h2 className="text-2xl font-light text-white mb-6 flex items-center gap-3">
+        <div className="rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 p-4">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-light text-white flex items-center gap-3">
             <Icons.activity className="h-5 w-5 text-white/90" />
-            Deep Work Contributions
+              Deep Work Journey
           </h2>
-          <div className="min-w-[800px]">
-            <div className="flex text-sm text-white/60 justify-between px-2 mb-2">
-              <span>Mon</span>
-              <span>Wed</span>
-              <span>Fri</span>
+            <div className="flex items-center gap-6">
+              {/* Total Focus Hours */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                <Icons.clock className="h-4 w-4 text-blue-400/90" />
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {Math.round((userStats?.weekly_focus_minutes || 0) / 60)} hours focused
+                  </p>
+                  <p className="text-[10px] text-white/60">lifetime deep work</p>
+                </div>
+              </div>
+
+              {/* Days of Deep Work */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                <Icons.calendar className="h-4 w-4 text-blue-400/90" />
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {userStats?.total_sessions || 0}/365 days
+                  </p>
+                  <p className="text-[10px] text-white/60">of deep work this year</p>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center gap-2 text-sm text-white/60 border-l border-white/10 pl-6">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-sm bg-blue-100/80" />
+                  <span>Less</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-sm bg-blue-500/80" />
+                  <span>More</span>
+                </div>
+              </div>
             </div>
-            <div className="grid grid-flow-col gap-1">
-              {Array.from({ length: 52 }).map((_, week) => (
-                <div key={week} className="grid grid-rows-7 gap-1">
-                  {Array.from({ length: 7 }).map((_, day) => {
-                    const dataIndex = week * 7 + day;
-                    const dayData = contributionData[dataIndex];
+          </div>
+
+          <div className="relative">
+            {/* Months labels */}
+            <div className="flex justify-between px-12 mb-4">
+              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) => (
+                <span key={month} className="text-sm text-white/70 font-medium">{month}</span>
+              ))}
+            </div>
+
+            {/* Days of week */}
+            <div className="absolute left-0 top-8 flex flex-col justify-between h-[168px] text-sm text-white/60">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                <div key={day} className="h-4 flex items-center">
+                  <span className="pr-4">{day}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Contribution grid with larger, more visible cells */}
+            <div className="pl-12">
+              <div className="grid grid-flow-col gap-2">
+                {/* First week with offset for Jan 1st (Wednesday) */}
+                <div className="grid grid-rows-7 gap-2">
+                  {/* Empty cells for Monday and Tuesday */}
+                  <div className="w-4 h-4 rounded-sm bg-transparent" />
+                  <div className="w-4 h-4 rounded-sm bg-transparent" />
+                  {/* Cells for Wed-Sun */}
+                  {Array.from({ length: 5 }).map((_, day) => {
+                    const date = new Date('2025-01-01');
+                    date.setDate(date.getDate() + day);
+                    const dateStr = date.toISOString().split('T')[0];
+                    const intensity = userStats?.last_session_date?.startsWith(dateStr) ? 
+                      Math.round(userStats.weekly_focus_minutes / 60) : 0;
+                    
                     return (
                       <div
                         key={day}
-                        className={`w-3 h-3 rounded-sm transition-colors hover:ring-2 hover:ring-offset-1 hover:ring-white/30 ${getContributionColor(
-                          dayData?.sessions || 0
-                        )}`}
-                        title={`${dayData?.date}: ${dayData?.sessions || 0} sessions`}
-                      />
+                        className={`
+                          w-4 h-4 rounded-sm transition-all duration-200
+                          ${getCellColor(intensity)}
+                          hover:ring-2 hover:ring-white/30 hover:scale-110
+                          group relative
+                        `}
+                      >
+                        {/* Hover tooltip */}
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                          <div className="bg-[#1a2e3c] px-3 py-2 rounded-lg border border-white/10 shadow-xl whitespace-nowrap">
+                            <p className="text-xs text-white/90 font-medium">
+                              {date.toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </p>
+                            <p className="text-sm text-blue-400 font-semibold mt-0.5">
+                              {intensity} hours focused
+                            </p>
+                          </div>
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1 border-4 border-transparent border-t-[#1a2e3c]" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Rest of the weeks */}
+                {Array.from({ length: 51 }).map((_, week) => (
+                  <div key={week} className="grid grid-rows-7 gap-2">
+                    {Array.from({ length: 7 }).map((_, day) => {
+                      const date = new Date('2025-01-01');
+                      date.setDate(date.getDate() + (week + 1) * 7 + day - 2); // -2 to account for the offset
+                      const dateStr = date.toISOString().split('T')[0];
+                      const intensity = userStats?.last_session_date?.startsWith(dateStr) ? 
+                        Math.round(userStats.weekly_focus_minutes / 60) : 0;
+                      
+                      return (
+                        <div
+                          key={day}
+                          className={`
+                            w-4 h-4 rounded-sm transition-all duration-200
+                            ${getCellColor(intensity)}
+                            hover:ring-2 hover:ring-white/30 hover:scale-110
+                            group relative
+                          `}
+                        >
+                          {/* Hover tooltip */}
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                            <div className="bg-[#1a2e3c] px-3 py-2 rounded-lg border border-white/10 shadow-xl whitespace-nowrap">
+                              <p className="text-xs text-white/90 font-medium">
+                                {date.toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric'
+                                })}
+                              </p>
+                              <p className="text-sm text-blue-400 font-semibold mt-0.5">
+                                {intensity} hours focused
+                              </p>
+                            </div>
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1 border-4 border-transparent border-t-[#1a2e3c]" />
+                          </div>
+                        </div>
                     );
                   })}
                 </div>
               ))}
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-8">
-            <h2 className="text-2xl font-light text-white mb-6">Weekly Focus Hours</h2>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={contributionData.slice(-7)}>
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { weekday: 'short' })}
-                  />
-                  <YAxis />
-                  <Tooltip 
-                    labelFormatter={(date) => new Date(date).toLocaleDateString()}
-                    formatter={(value) => [`${value} sessions`]}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="sessions" 
-                    stroke="#8b5cf6" 
-                    strokeWidth={2}
-                    dot={{ fill: '#8b5cf6' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-8">
-            <h2 className="text-2xl font-light text-white mb-6">Session Distribution</h2>
-            <div className="h-[300px] flex items-center justify-center">
-              <p className="text-muted-foreground">Coming soon...</p>
+            {/* Encouraging message */}
+            <div className="mt-6 flex items-center justify-center">
+              <div className="px-4 py-2 rounded-full bg-white/5 border border-white/10">
+                <p className="text-sm text-white/80">
+                  {totalSessions > 0 
+                    ? "Every block represents a step in your deep work journey 🚀" 
+                    : "Start your deep work journey today! 💫"}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </div>
-
-      {/* <Button
-        onClick={() => navigate('/loading-test')}
-        className="fixed bottom-6 right-6 bg-purple-500/20 hover:bg-purple-500/30 backdrop-blur-sm z-50 
-          border border-white/10 shadow-lg"
-        size="lg"
-      >
-        <Icons.testTube className="mr-2 h-4 w-4" />
-        Test Loading States
-      </Button> */}
     </div>
   );
 }

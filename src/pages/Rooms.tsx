@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { RoomScheduler } from '../components/room/RoomScheduler'
-import { Icons } from '../components/ui/icons'
+import { Icons } from '../components/ui/icons' 
 import { Button } from '../components/ui/button'
 import type { RoomFilter } from '../types/room'
 import { useAuth } from '../contexts/AuthContext'
+import { SessionCompleteModal } from '../components/room/SessionCompleteModal'
 
 export default function Rooms() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const { showCelebration, sessionDuration } = location.state || {};
+  const [showModal, setShowModal] = useState(showCelebration || false);
 
   useEffect(() => {
     let mounted = true;
@@ -118,6 +122,13 @@ export default function Rooms() {
           </div>
         </Tabs>
       </div>
+
+      {showModal && (
+        <SessionCompleteModal
+          duration={sessionDuration || 0}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </div>
   );
 } 

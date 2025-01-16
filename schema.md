@@ -30,18 +30,25 @@ active (boolean)
 created_at (timestamp)
 room_type (text) → 'FOCUS' or 'SPRINT'
 theme (text) → 'DEEP_WORK', 'CREATIVE_FLOW', or 'STUDY_HALL'
-sessions
 
-Tracks individual user focus sessions.
+Table: user_stats
+Description: This table stores statistics for users, including their session counts, streaks, and focus minutes.
+
 Columns:
-id (uuid) → Primary Key
-user_id (uuid) → Foreign key to auth.users.id
-room_id (uuid) → Foreign key to rooms.id
-start_time (timestamp)
-end_time (timestamp)
-duration (integer)
-created_at (timestamp)
-rewards
+
+id (uuid, primary key): Unique identifier for the user stats record, automatically generated.
+user_id (uuid, foreign key): Identifier for the user, referencing auth.users(id).
+total_sessions (integer): Total number of sessions the user has completed, default is 0.
+current_streak (integer): Current streak of consecutive sessions, default is 0.
+weekly_focus_minutes (integer): Total focus minutes logged in the current week, default is 0.
+last_session_date (timestamp with time zone): Timestamp of the last session completed by the user.
+created_at (timestamp with time zone): Timestamp of when the record was created, default is current time.
+updated_at (timestamp with time zone): Timestamp of the last update to the record, default is current time.
+Foreign Key:
+
+user_id references auth.users(id) and is set to cascade on delete.
+Indexes:
+
 
 Tracks user achievements and badges.
 Columns:
