@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Icons } from '../ui/icons';
@@ -15,32 +15,22 @@ export function TestVideoRoom() {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  // Debug state - limit updates
+  // Debug state
   const [isDebugVisible, setIsDebugVisible] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const debugLogsRef = useRef<string[]>([]);
   const [currentFocusTask, setCurrentFocusTask] = useState('');
-  const [startTime] = useState(() => new Date());
+  const [startTime] = useState(() => new Date()); // Initialize start time when component mounts
   
   // Video container refs
   const localVideoRef = useRef<HTMLDivElement>(null);
   const videoContainersRef = useRef<{ [uid: string]: HTMLDivElement | null }>({});
-  const isPlayingRef = useRef<{ [uid: string]: boolean }>({});
 
-  // Throttled logging to prevent excessive updates
-  const addLog = useCallback((message: string) => {
+  // Enhanced logging
+  const addLog = (message: string) => {
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    const logMessage = `${timestamp}: ${message}`;
-    console.log(logMessage);
-    
-    debugLogsRef.current = [...debugLogsRef.current.slice(-9), logMessage];
-    // Debounce the state update
-    const timeoutId = setTimeout(() => {
-      setDebugLogs(debugLogsRef.current);
-    }, 1000);
-    
-    return () => clearTimeout(timeoutId);
-  }, []);
+    console.log(`${timestamp}: ${message}`);
+    setDebugLogs(prev => [...prev.slice(-9), `${timestamp}: ${message}`]);
+  };
 
   // Use our custom hooks
   const {
@@ -60,199 +50,14 @@ export function TestVideoRoom() {
     updateCurrentTask
   } = useRoomPresence(TEST_ROOM_UUID, user?.id || '');
 
-  // Handle local video
-  useEffect(() => {
-    if (!localVideoRef.current || !videoTrack) return;
-
-    const container = localVideoRef.current;
-    try {
-      videoTrack.play(container);
-      addLog('Local video initialized');
-    } catch (error) {
-      console.error('Local video error:', error);
-    }
-
-    return () => {
-      try {
-        videoTrack.stop();
-        container.innerHTML = '';
-      } catch (error) {
-        console.error('Error cleaning up local video:', error);
-      }
-    };
-  }, [videoTrack]);
-
-  // Handle remote videos - with debouncing
-  useEffect(() => {
-    let isMounted = true;
-    const setupTimeoutRef = useRef<NodeJS.Timeout>();
-
-    const setupRemoteVideos = async () => {
-      if (!isMounted) return;
-
-      // Clear any pending setup
-      if (setupTimeoutRef.current) {
-        clearTimeout(setupTimeoutRef.current);
-      }
-
-      // Debounce the setup
-      setupTimeoutRef.current = setTimeout(async () => {
-        try {
-          // First cleanup any videos that are no longer needed
-          Object.entries(videoContainersRef.current).forEach(([uid, container]) => {
-            const user = remoteUsers.find(u => u.uid === uid);
-            if (!user && container) {
-              container.innerHTML = '';
-              delete isPlayingRef.current[uid];
-            }
-          });
-
-          // Then setup new videos
-          for (const user of remoteUsers) {
-            const container = videoContainersRef.current[user.uid];
-            if (container && user.videoTrack && !isPlayingRef.current[user.uid]) {
-              try {
-                await user.videoTrack.play(container);
-                isPlayingRef.current[user.uid] = true;
-              } catch (error) {
-                console.error(`Error playing remote video for ${user.uid}:`, error);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error in remote video setup:', error);
-        }
-      }, 500);
-    };
-
-    setupRemoteVideos();
-
-    return () => {
-      isMounted = false;
-      if (setupTimeoutRef.current) {
-        clearTimeout(setupTimeoutRef.current);
-      }
-    };
-  }, [remoteUsers]);
-
   // Handle room exit
-  const handleLeaveRoom = useCallback(async () => {
-    try {
-      if (videoTrack) {
-        videoTrack.stop();
-      }
-      if (audioTrack) {
-        audioTrack.stop();
-      }
-      navigate('/');
-    } catch (error) {
-      console.error('Error leaving room:', error);
-      navigate('/');
-    }
-  }, [videoTrack, audioTrack, navigate]);
-
-  // Remote participant rendering - simplified
-  const renderRemoteParticipant = useCallback((participant: any) => {
-    const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
-    const profile = profiles[participant.user_id];
-    
-    return (
-      <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-        <div className="aspect-video bg-black/40 relative">
-          <div 
-            ref={el => {
-              if (el) {
-                videoContainersRef.current[participant.user_id] = el;
-              }
-            }}
-            className="absolute inset-0" 
-          />
-          {!remoteUser?.videoTrack && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-              <div className="flex flex-col items-center">
-                <Icons.video className="w-6 h-6 text-white/40 mb-2" />
-                <p className="text-white/80 text-sm">Camera not available</p>
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="p-4">
-          {/* Profile Header */}
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
-              <span className="text-sky-300 font-medium">
-                {profile?.full_name?.[0] || 'P'}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-white font-medium truncate">
-                {profile?.full_name || `Participant ${participant.user_id.slice(0, 8)}`}
-              </h3>
-              <p className="text-sky-200/60 text-sm truncate">
-                {profile?.title || 'Deep Focus Enthusiast'}
-              </p>
-            </div>
-          </div>
-
-          {/* Profile Info */}
-          <div className="space-y-2.5">
-            <div className="bg-black/20 rounded-lg p-3">
-              <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
-              <p className="text-white/90 text-sm line-clamp-2">
-                {profile?.bio || 'No bio added yet'}
-              </p>
-            </div>
-
-            <div className="bg-black/20 rounded-lg p-3">
-              <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
-              <p className="text-white/90 text-sm">
-                {profile?.deep_work_sessions || '0'} sessions completed
-              </p>
-            </div>
-
-            <div className="bg-black/20 rounded-lg p-3">
-              <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
-              <p className="text-white/90 text-sm">
-                {participant.current_focus_task || 'Not specified'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }, [remoteUsers, profiles]);
-
-  // Error handling
-  useEffect(() => {
-    if (agoraError || presenceError) {
-      console.error('Room error:', { agoraError, presenceError });
-      // Show error toast or UI
-      // For now just log it
-    }
-  }, [agoraError, presenceError]);
-
-  // Connection status effect
-  useEffect(() => {
-    if (!isConnected) {
-      console.log('Attempting to reconnect...');
-      // Could show a reconnecting UI here
-    }
-  }, [isConnected]);
-
-  // Debug mode toggle
-  const toggleDebug = () => {
-    setIsDebugVisible(!isDebugVisible);
+  const handleLeaveRoom = () => {
+    navigate('/');
   };
 
-  if (!user) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Authentication Required</h2>
-          <p className="text-gray-600">Please sign in to join the room.</p>
-        </div>
-      </div>
-    );
+  // Play local video when ref is available
+  if (localVideoRef.current && videoTrack) {
+    videoTrack.play(localVideoRef.current);
   }
 
   // Render the room UI
@@ -395,7 +200,76 @@ export function TestVideoRoom() {
                   return p.user_id !== user?.id && remoteUser;
                 })
                 .slice(0, 4)
-                .map(participant => renderRemoteParticipant(participant))}
+                .map(participant => {
+                  const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
+                  const profile = profiles[participant.user_id];
+                  
+                  return (
+                    <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
+                      <div className="aspect-video bg-black/40 relative">
+                        <div 
+                          ref={el => {
+                            videoContainersRef.current[participant.user_id] = el;
+                            if (el && remoteUser?.videoTrack) {
+                              remoteUser.videoTrack.play(el);
+                            }
+                          }}
+                          className="absolute inset-0" 
+                        />
+                        {!remoteUser?.videoTrack && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                            <div className="flex flex-col items-center">
+                              <Icons.video className="w-6 h-6 text-white/40 mb-2" />
+                              <p className="text-white/80 text-sm">Camera not available</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        {/* Profile Header */}
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                            <span className="text-sky-300 font-medium">
+                              {profile?.full_name?.[0] || 'P'}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-white font-medium truncate">
+                              {profile?.full_name || `Participant ${participant.user_id.slice(0, 8)}`}
+                            </h3>
+                            <p className="text-sky-200/60 text-sm truncate">
+                              {profile?.title || 'Deep Focus Enthusiast'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Profile Info */}
+                        <div className="space-y-2.5">
+                          <div className="bg-black/20 rounded-lg p-3">
+                            <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
+                            <p className="text-white/90 text-sm line-clamp-2">
+                              {profile?.bio || 'No bio added yet'}
+                            </p>
+                          </div>
+
+                          <div className="bg-black/20 rounded-lg p-3">
+                            <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
+                            <p className="text-white/90 text-sm">
+                              {profile?.deep_work_sessions || '0'} sessions completed
+                            </p>
+                          </div>
+
+                          <div className="bg-black/20 rounded-lg p-3">
+                            <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                            <p className="text-white/90 text-sm">
+                              {participant.current_focus_task || 'Not specified'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
 
               {/* Empty Slots */}
               {Array.from({ length: Math.max(0, 4 - (participants.filter(p => {
@@ -428,20 +302,8 @@ export function TestVideoRoom() {
             </div>
           </div>
 
-          {/* Bottom Controls */}
-          <div className="fixed bottom-6 right-6 flex items-center gap-4">
-            {/* Debug Toggle Button */}
-            <Button
-              onClick={toggleDebug}
-              variant="ghost"
-              size="sm"
-              className="bg-black/20 hover:bg-black/30 text-white"
-            >
-              <Icons.activity className="w-4 h-4 mr-2" />
-              {isDebugVisible ? 'Hide Debug' : 'Show Debug'}
-            </Button>
-
-            {/* Leave Room Button */}
+          {/* Bottom Right: Leave Button */}
+          <div className="fixed bottom-6 right-6">
             <Button 
               onClick={handleLeaveRoom}
               variant="destructive"
@@ -452,21 +314,6 @@ export function TestVideoRoom() {
               Leave Room
             </Button>
           </div>
-
-          {/* Debug Panel */}
-          {isDebugVisible && (
-            <div className="fixed bottom-20 right-6 bg-black/80 p-4 rounded-lg text-white text-sm w-80">
-              <h3 className="font-medium mb-2">Debug Info</h3>
-              <div className="space-y-1">
-                <p>Connected: {isConnected ? 'Yes' : 'No'}</p>
-                <p>Remote Users: {remoteUsers.length}</p>
-                <p>Participants: {participants.length}</p>
-                {debugLogs.map((log, i) => (
-                  <p key={i} className="text-xs text-gray-400">{log}</p>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

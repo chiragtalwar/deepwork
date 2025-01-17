@@ -43,14 +43,6 @@ export function useAgoraRoom(roomId: string, userId: string) {
   // Initialize tracks with proper error handling
   const initializeTracks = async () => {
     try {
-      // Close existing tracks if they exist
-      if (videoTrackRef.current) {
-        videoTrackRef.current.close();
-      }
-      if (audioTrackRef.current) {
-        audioTrackRef.current.close();
-      }
-
       // Request permissions first
       await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
@@ -72,50 +64,31 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
       return { videoTrack, audioTrack };
     } catch (error) {
-      console.error('Failed to initialize tracks:', error);
       throw new Error(`Failed to initialize tracks: ${error}`);
     }
   };
 
-  // Cleanup function
-  const cleanup = async () => {
+  // Handle visibility changes without disrupting the connection
+  const handleVisibilityChange = async () => {
+    if (!videoTrackRef.current) return;
+    
     try {
-      // Unpublish and close tracks
-      if (client.current) {
-        const tracks = [videoTrackRef.current, audioTrackRef.current].filter((track): track is ICameraVideoTrack | IMicrophoneAudioTrack => track !== null);
-        if (tracks.length > 0) {
-          await client.current.unpublish(tracks);
-        }
-        await client.current.leave();
+      if (document.hidden) {
+        await videoTrackRef.current.setEncoderConfiguration(VIDEO_CONFIG.background);
+      } else {
+        await videoTrackRef.current.setEncoderConfiguration(VIDEO_CONFIG.normal);
       }
-
-      // Close tracks
-      if (videoTrackRef.current) {
-        videoTrackRef.current.close();
-        videoTrackRef.current = null;
-      }
-      if (audioTrackRef.current) {
-        audioTrackRef.current.close();
-        audioTrackRef.current = null;
-      }
-
-      setRemoteUsers([]);
-      setIsConnected(false);
-      isInitializedRef.current = false;
     } catch (error) {
-      console.error('Cleanup error:', error);
+      console.error('Failed to adjust video quality:', error);
     }
   };
 
   // Initialize room connection
   useEffect(() => {
-    if (!userId || !roomId) return;
+    if (!userId || isInitializedRef.current) return;
 
     const initialize = async () => {
       try {
-        // Clean up existing connection if any
-        await cleanup();
-
         // Join the channel
         await client.current.join(
           import.meta.env.VITE_AGORA_APP_ID!,
@@ -130,66 +103,53 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
         isInitializedRef.current = true;
         setIsConnected(true);
-        setError(null);
       } catch (error) {
-        console.error('Failed to initialize room:', error);
         setError(`Failed to initialize room: ${error}`);
         setIsConnected(false);
-        await cleanup();
       }
     };
 
     // Set up event listeners
-    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      try {
-        await client.current.subscribe(user, mediaType);
-        
-        if (mediaType === 'video') {
-          setRemoteUsers(prev => {
-            if (!prev.some(u => u.uid === user.uid)) {
-              return [...prev, user];
-            }
-            return prev;
-          });
-        }
-      } catch (error) {
-        console.error('Failed to subscribe to user:', error);
-      }
-    };
-
-    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+    client.current.on('user-published', async (user, mediaType) => {
+      await client.current.subscribe(user, mediaType);
+      
       if (mediaType === 'video') {
-        client.current.unsubscribe(user, mediaType);
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-      }
-    };
-
-    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    };
-
-    client.current.on('user-published', handleUserPublished);
-    client.current.on('user-unpublished', handleUserUnpublished);
-    client.current.on('user-left', handleUserLeft);
-
-    // Handle connection state changes
-    client.current.on('connection-state-change', (curState, prevState) => {
-      console.log(`Connection state changed from ${prevState} to ${curState}`);
-      if (curState === 'DISCONNECTED') {
-        setIsConnected(false);
-        cleanup();
+        setRemoteUsers(prev => {
+          if (!prev.some(u => u.uid === user.uid)) {
+            return [...prev, user];
+          }
+          return prev;
+        });
       }
     });
+
+    client.current.on('user-unpublished', (user, mediaType) => {
+      if (mediaType === 'video') {
+        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      }
+    });
+
+    client.current.on('user-left', (user) => {
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    });
+
+    // Handle visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Initialize
     initialize();
 
-    // Cleanup
+    // Cleanup only when truly leaving
     return () => {
-      client.current.off('user-published', handleUserPublished);
-      client.current.off('user-unpublished', handleUserUnpublished);
-      client.current.off('user-left', handleUserLeft);
-      cleanup();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Only cleanup if we're actually leaving the page
+      if (!document.hidden) {
+        client.current.leave();
+        videoTrackRef.current?.close();
+        audioTrackRef.current?.close();
+        isInitializedRef.current = false;
+      }
     };
   }, [roomId, userId]);
 

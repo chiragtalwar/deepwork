@@ -27,28 +27,9 @@ export function useRoomPresence(roomId: string, userId: string) {
 
   useEffect(() => {
     let presenceChannel: RealtimeChannel;
-    let mounted = true;
-
-    const cleanup = async () => {
-      if (presenceChannel) {
-        await presenceChannel.unsubscribe();
-      }
-      
-      try {
-        await supabase
-          .from('room_participants')
-          .delete()
-          .match({ room_id: roomId, user_id: userId });
-      } catch (error) {
-        console.error('Failed to cleanup room participant:', error);
-      }
-    };
 
     const setupPresence = async () => {
       try {
-        // Clean up any existing presence first
-        await cleanup();
-
         // First ensure room exists
         const { data: room } = await supabase
           .from('rooms')
@@ -87,15 +68,13 @@ export function useRoomPresence(roomId: string, userId: string) {
             table: 'room_participants',
             filter: `room_id=eq.${roomId}`
           }, async (payload) => {
-            if (!mounted) return;
-
             // Fetch all current participants
             const { data: participants } = await supabase
               .from('room_participants')
               .select('*')
               .eq('room_id', roomId);
 
-            if (participants && mounted) {
+            if (participants) {
               setParticipants(participants);
               
               // Fetch profiles for all participants
@@ -104,7 +83,7 @@ export function useRoomPresence(roomId: string, userId: string) {
                 .select('*')
                 .in('id', participants.map(p => p.user_id));
 
-              if (profiles && mounted) {
+              if (profiles) {
                 const profileMap = profiles.reduce((acc, profile) => {
                   acc[profile.id] = profile;
                   return acc;
@@ -122,7 +101,7 @@ export function useRoomPresence(roomId: string, userId: string) {
           .select('*')
           .eq('room_id', roomId);
 
-        if (initialParticipants && mounted) {
+        if (initialParticipants) {
           setParticipants(initialParticipants);
           
           const { data: initialProfiles } = await supabase
@@ -130,7 +109,7 @@ export function useRoomPresence(roomId: string, userId: string) {
             .select('*')
             .in('id', initialParticipants.map(p => p.user_id));
 
-          if (initialProfiles && mounted) {
+          if (initialProfiles) {
             const profileMap = initialProfiles.reduce((acc, profile) => {
               acc[profile.id] = profile;
               return acc;
@@ -140,9 +119,7 @@ export function useRoomPresence(roomId: string, userId: string) {
           }
         }
       } catch (error) {
-        if (mounted) {
-          setError(`Failed to setup presence: ${error}`);
-        }
+        setError(`Failed to setup presence: ${error}`);
       }
     };
 
@@ -150,8 +127,17 @@ export function useRoomPresence(roomId: string, userId: string) {
 
     // Cleanup
     return () => {
-      mounted = false;
-      cleanup();
+      if (presenceChannel) {
+        presenceChannel.unsubscribe();
+      }
+      
+      // Remove user from room if actually leaving
+      if (!document.hidden) {
+        supabase
+          .from('room_participants')
+          .delete()
+          .match({ room_id: roomId, user_id: userId });
+      }
     };
   }, [roomId, userId]);
 
