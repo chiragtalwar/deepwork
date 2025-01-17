@@ -76,7 +76,17 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const initializeVideo = async () => {
     try {
       setIsInitializing(true);
-      await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, null);
+      
+      // Force cleanup if already connected
+      if (client.connectionState === 'CONNECTED' || client.connectionState === 'CONNECTING') {
+        await cleanup();
+      }
+
+      // Use the currentUserId as the Agora UID (remove dashes to make it a valid number)
+      const uid = parseInt(currentUserId!.replace(/-/g, '').slice(0, 8), 16);
+      console.log('Joining with UID:', uid);
+      
+      await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, uid);
       
       const [videoTrack, audioTrack] = await Promise.all([
         AgoraRTC.createCameraVideoTrack({
@@ -101,6 +111,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       }
 
       await client.publish([videoTrack, audioTrack]);
+      console.log('Published local tracks');
       setIsInitializing(false);
     } catch (error) {
       console.error('Error initializing video:', error);
@@ -347,6 +358,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     if (!client) return;
 
     const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      console.log('Remote user published:', user.uid, mediaType);
       await client.subscribe(user, mediaType);
 
       if (mediaType === 'video') {
@@ -358,9 +370,17 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
           return prev.map(u => u.uid === user.uid ? user : u);
         });
 
-        const el = remoteVideoRefs.current[user.uid.toString()];
-        if (el && user.videoTrack) {
-          user.videoTrack.play(el);
+        // Convert the numeric UID back to UUID format
+        const remoteUserId = participants.find(p => 
+          parseInt(p.id.replace(/-/g, '').slice(0, 8), 16) === user.uid
+        )?.id;
+
+        if (remoteUserId && user.videoTrack) {
+          const el = remoteVideoRefs.current[remoteUserId];
+          if (el) {
+            console.log('Playing video for remote user:', remoteUserId);
+            user.videoTrack.play(el);
+          }
         }
       }
 
@@ -370,6 +390,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     };
 
     const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      console.log('Remote user left:', user.uid);
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
     };
 
@@ -380,7 +401,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       client.off('user-published', handleUserPublished);
       client.off('user-left', handleUserLeft);
     };
-  }, [client]);
+  }, [client, participants]);
 
   // Join room on mount
   useEffect(() => {
