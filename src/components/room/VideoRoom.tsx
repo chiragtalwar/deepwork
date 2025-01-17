@@ -45,7 +45,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const audioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const mountedRef = useRef(true);
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
-  const remoteVideoRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const remoteVideoRefs = useRef<{ [uid: string]: HTMLDivElement | null }>({});
 
   // Initialize user and video
   useEffect(() => {
@@ -76,23 +76,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const initializeVideo = async () => {
     try {
       setIsInitializing(true);
-      
-      // Force cleanup if already connected
-      if (client.connectionState === 'CONNECTED' || client.connectionState === 'CONNECTING') {
-        await cleanup();
-      }
-
-      if (!currentUserId) {
-        console.error('No currentUserId available');
-        return;
-      }
-
-      // Generate a consistent numeric UID from the UUID
-      const uidStr = currentUserId.replace(/-/g, '').slice(-8);
-      const uid = parseInt(uidStr, 16);
-      console.log('Joining with UID:', uid, 'from userId:', currentUserId);
-      
-      await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, uid);
+      await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, null);
       
       const [videoTrack, audioTrack] = await Promise.all([
         AgoraRTC.createCameraVideoTrack({
@@ -117,7 +101,6 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       }
 
       await client.publish([videoTrack, audioTrack]);
-      console.log('Published local tracks');
       setIsInitializing(false);
     } catch (error) {
       console.error('Error initializing video:', error);
@@ -126,7 +109,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     }
   };
 
-  // Cleanup function with better participant handling
+  // Cleanup function
   const cleanup = async () => {
     try {
       // Stop all remote user tracks
@@ -287,27 +270,26 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   // Join room
   const joinRoom = async () => {
     try {
-      // First cleanup any stale entries for this user
-      await supabase
+      // First check if user is already in the room
+      const { data: existingParticipant } = await supabase
         .from('room_participants')
-        .delete()
-        .eq('user_id', currentUserId);
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('user_id', currentUserId)
+        .single();
 
-      // Then add the new entry
-      const { error: participantError } = await supabase
-        .from('room_participants')
-        .upsert({
-          room_id: roomId,
-          user_id: currentUserId,
-          joined_at: new Date().toISOString(),
-          is_focused: true
-        }, {
-          onConflict: 'room_id,user_id'
-        });
+      // If participant exists, don't try to insert again
+      if (!existingParticipant) {
+        const { error: participantError } = await supabase
+          .from('room_participants')
+          .insert({
+            room_id: roomId,
+            user_id: currentUserId,
+            joined_at: new Date().toISOString(),
+            is_focused: true
+          });
 
-      if (participantError) {
-        console.error('Error joining room:', participantError);
-        return;
+        if (participantError) throw participantError;
       }
 
       // Fetch room details with correct fields
@@ -362,10 +344,9 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
 
   // Handle remote users
   useEffect(() => {
-    if (!client || !currentUserId) return;
+    if (!client) return;
 
     const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      console.log('Remote user published:', user.uid, mediaType);
       await client.subscribe(user, mediaType);
 
       if (mediaType === 'video') {
@@ -377,23 +358,9 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
           return prev.map(u => u.uid === user.uid ? user : u);
         });
 
-        // Find participant by matching their UID pattern
-        const remoteUserId = participants.find(p => {
-          const puidStr = p.id.replace(/-/g, '').slice(-8);
-          const puid = parseInt(puidStr, 16);
-          return puid === user.uid;
-        })?.id;
-
-        if (remoteUserId && user.videoTrack) {
-          const el = remoteVideoRefs.current[remoteUserId];
-          if (el) {
-            console.log('Playing video for remote user:', remoteUserId);
-            user.videoTrack.play(el);
-          } else {
-            console.log('No video element found for remote user:', remoteUserId);
-          }
-        } else {
-          console.log('Could not find matching participant for UID:', user.uid);
+        const el = remoteVideoRefs.current[user.uid.toString()];
+        if (el && user.videoTrack) {
+          user.videoTrack.play(el);
         }
       }
 
@@ -403,7 +370,6 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     };
 
     const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
-      console.log('Remote user left:', user.uid);
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
     };
 
@@ -414,18 +380,24 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       client.off('user-published', handleUserPublished);
       client.off('user-left', handleUserLeft);
     };
-  }, [client, participants, currentUserId]);
+  }, [client]);
 
-  // Improved unmount cleanup
+  // Join room on mount
   useEffect(() => {
     if (!currentUserId || !roomId) return;
     
     joinRoom();
 
     return () => {
-      cleanup().catch(error => {
-        console.error('Error during cleanup:', error);
-      });
+      supabase
+        .from('room_participants')
+        .delete()
+        .match({ room_id: roomId, user_id: currentUserId })
+        .then(({ error }) => {
+          if (error) console.error('Error leaving room:', error);
+        });
+      
+      cleanup();
     };
   }, [currentUserId, roomId]);
 
@@ -521,28 +493,6 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const handleCompleteModalClose = () => {
     setShowCompleteModal(false);
     navigate('/rooms');
-  };
-
-  // Remote video rendering
-  const renderRemoteVideo = (participant: any) => {
-    const puidStr = participant.id.replace(/-/g, '').slice(-8);
-    const puid = parseInt(puidStr, 16);
-    const remoteUser = remoteUsers.find(u => u.uid === puid);
-
-    return (
-      <div 
-        ref={el => {
-          if (el) {
-            remoteVideoRefs.current[participant.id] = el;
-            if (remoteUser?.videoTrack) {
-              console.log('Playing video for participant:', participant.id);
-              remoteUser.videoTrack.play(el);
-            }
-          }
-        }}
-        className="absolute inset-0"
-      />
-    );
   };
 
   // Main render
@@ -733,7 +683,18 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
                 .map(participant => (
                   <div key={participant.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                     <div className="aspect-video bg-black/40 relative">
-                      {renderRemoteVideo(participant)}
+                      <div 
+                        ref={el => {
+                          if (el) {
+                            remoteVideoRefs.current[participant.id] = el;
+                            const remoteUser = remoteUsers.find(u => u.uid.toString() === participant.id);
+                            if (remoteUser?.videoTrack) {
+                              remoteUser.videoTrack.play(el);
+                            }
+                          }
+                        }}
+                        className="absolute inset-0"
+                      />
                     </div>
 
                     <div className="p-4">

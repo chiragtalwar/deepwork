@@ -129,7 +129,7 @@ export default function Dashboard() {
 
   const fetchSessionData = useCallback(async () => {
     if (!user || !userStats) return;
-
+    
     const data: ChartDataPoint[] = [];
     const now = new Date();
     
@@ -369,73 +369,73 @@ export default function Dashboard() {
             </>
           ) : (
             <>
-              <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
-                <div className="px-4 py-3">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Icons.clock className="h-4 w-4 text-white/90" />
-                    <span className="text-white/90 text-base font-medium">Focus Time</span>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-4xl font-light text-white flex items-baseline">
-                          {weeklyHours}h
-                          <span className="text-sm text-emerald-400/90 ml-2 font-medium">
-                            {getTodayProgress()}
-                          </span>
-                        </p>
-                        <p className="text-white/60 text-xs mt-0.5">
-                          {weeklyHours > 0 ? "You're making progress! 🚀" : "Let's start focusing!"}
-                        </p>
-                      </div>
-                      
+          <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Icons.clock className="h-4 w-4 text-white/90" />
+                <span className="text-white/90 text-base font-medium">Focus Time</span>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-4xl font-light text-white flex items-baseline">
+                    {weeklyHours}h
+                      <span className="text-sm text-emerald-400/90 ml-2 font-medium">
+                        {getTodayProgress()}
+                      </span>
+                    </p>
+                    <p className="text-white/60 text-xs mt-0.5">
+                      {weeklyHours > 0 ? "You're making progress! 🚀" : "Let's start focusing!"}
+                  </p>
+                </div>
+                
                       {TimeControls}
-                    </div>
+                </div>
 
-                    {/* Chart Container */}
-                    <div className="flex flex-col w-full">
+                {/* Chart Container */}
+                <div className="flex flex-col w-full">
                       {Chart}
-                    </div>
-                  </div>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
-                <div className="px-4 py-3">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Icons.flame className="h-5 w-5 text-orange-400" />
-                    <span className="text-white/90 text-lg font-medium">Current Streak</span>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <p className="text-5xl font-light text-white">{currentStreak}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
-                      <p className="text-white/70 text-sm">
-                        {getStreakMessage(currentStreak)}
-                      </p>
-                    </div>
-                  </div>
+          <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-3 mb-4">
+                <Icons.flame className="h-5 w-5 text-orange-400" />
+                <span className="text-white/90 text-lg font-medium">Current Streak</span>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-5xl font-light text-white">{currentStreak}</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+                  <p className="text-white/70 text-sm">
+                    {getStreakMessage(currentStreak)}
+                  </p>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
-                <div className="px-4 py-3">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Icons.target className="h-5 w-5 text-emerald-400" />
-                    <span className="text-white/90 text-lg font-medium">Total Sessions</span>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <p className="text-5xl font-light text-white">{totalSessions}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-emerald-400" />
-                      <p className="text-white/70 text-sm">Lifetime focus sessions</p>
-                    </div>
-                  </div>
+          <div className="group relative overflow-hidden rounded-xl bg-[#2a3f4c]/40 backdrop-blur-md border border-white/10 transition-all duration-300 hover:bg-[#2a3f4c]/50">
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-3 mb-4">
+                <Icons.target className="h-5 w-5 text-emerald-400" />
+                <span className="text-white/90 text-lg font-medium">Total Sessions</span>
+              </div>
+              
+              <div className="space-y-3">
+                <p className="text-5xl font-light text-white">{totalSessions}</p>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                  <p className="text-white/70 text-sm">Lifetime focus sessions</p>
                 </div>
               </div>
+            </div>
+          </div>
             </>
           )}
         </div>
