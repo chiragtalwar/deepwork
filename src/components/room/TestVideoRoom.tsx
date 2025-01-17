@@ -73,19 +73,49 @@ export function TestVideoRoom() {
   // Play local video when ref is available
   useEffect(() => {
     if (localVideoRef.current && videoTrack) {
-      videoTrack.play(localVideoRef.current);
+      try {
+        // First stop any existing playback
+        videoTrack.stop();
+        // Then play in the container
+        videoTrack.play(localVideoRef.current);
+        addLog('Local video track playing');
+      } catch (error) {
+        console.error('Error playing local video:', error);
+        addLog('Error playing local video');
+      }
     }
-  }, [videoTrack]);
+  }, [videoTrack, addLog]);
 
   // Handle remote video refs
   useEffect(() => {
+    const playRemoteVideo = async (user: any, container: HTMLDivElement) => {
+      try {
+        if (user.videoTrack) {
+          // First stop any existing playback
+          user.videoTrack.stop();
+          // Then play in the container
+          await user.videoTrack.play(container);
+          addLog(`Remote video playing for user: ${user.uid}`);
+        }
+      } catch (error) {
+        console.error('Error playing remote video:', error);
+        addLog(`Error playing remote video for user: ${user.uid}`);
+      }
+    };
+
     // Clean up previous video tracks
     const cleanupPreviousTracks = () => {
       Object.entries(videoContainersRef.current).forEach(([uid, el]) => {
         const remoteUser = remoteUsers.find(u => u.uid === uid);
-        if (el && !remoteUser?.videoTrack) {
-          // Remote user no longer has video, clean up the element
-          el.innerHTML = '';
+        if (el) {
+          if (!remoteUser?.videoTrack) {
+            // Remote user no longer has video, clean up the element
+            el.innerHTML = '';
+            addLog(`Cleaned up video for user: ${uid}`);
+          } else {
+            // Ensure video is playing for existing users
+            playRemoteVideo(remoteUser, el);
+          }
         }
       });
     };
@@ -93,13 +123,22 @@ export function TestVideoRoom() {
     // Play new video tracks
     remoteUsers.forEach(user => {
       const container = videoContainersRef.current[user.uid];
-      if (container && user.videoTrack) {
-        user.videoTrack.play(container);
+      if (container) {
+        playRemoteVideo(user, container);
       }
     });
 
     cleanupPreviousTracks();
-  }, [remoteUsers]);
+
+    // Cleanup function
+    return () => {
+      Object.entries(videoContainersRef.current).forEach(([_, el]) => {
+        if (el) {
+          el.innerHTML = '';
+        }
+      });
+    };
+  }, [remoteUsers, addLog]);
 
   // Remote participant rendering
   const renderRemoteParticipant = (participant: any) => {
@@ -111,7 +150,14 @@ export function TestVideoRoom() {
         <div className="aspect-video bg-black/40 relative">
           <div 
             ref={el => {
-              videoContainersRef.current[participant.user_id] = el;
+              if (el) {
+                videoContainersRef.current[participant.user_id] = el;
+                // If we already have the video track, play it immediately
+                if (remoteUser?.videoTrack) {
+                  remoteUser.videoTrack.play(el);
+                  addLog(`Immediate play for user: ${participant.user_id}`);
+                }
+              }
             }}
             className="absolute inset-0" 
           />
