@@ -376,8 +376,20 @@ export function TestVideoRoom() {
             </div>
           </div>
 
-          {/* Bottom Right: Leave Button */}
-          <div className="fixed bottom-6 right-6">
+          {/* Bottom Controls */}
+          <div className="fixed bottom-6 right-6 flex items-center gap-4">
+            {/* Debug Toggle Button */}
+            <Button
+              onClick={toggleDebug}
+              variant="ghost"
+              size="sm"
+              className="bg-black/20 hover:bg-black/30 text-white"
+            >
+              <Icons.activity className="w-4 h-4 mr-2" />
+              {isDebugVisible ? 'Hide Debug' : 'Show Debug'}
+            </Button>
+
+            {/* Leave Room Button */}
             <Button 
               onClick={handleLeaveRoom}
               variant="destructive"
@@ -388,34 +400,23 @@ export function TestVideoRoom() {
               Leave Room
             </Button>
           </div>
+
+          {/* Debug Panel */}
+          {isDebugVisible && (
+            <div className="fixed bottom-20 right-6 bg-black/80 p-4 rounded-lg text-white text-sm w-80">
+              <h3 className="font-medium mb-2">Debug Info</h3>
+              <div className="space-y-1">
+                <p>Connected: {isConnected ? 'Yes' : 'No'}</p>
+                <p>Remote Users: {remoteUsers.length}</p>
+                <p>Participants: {participants.length}</p>
+                {debugLogs.map((log, i) => (
+                  <p key={i} className="text-xs text-gray-400">{log}</p>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Add debug panel */}
-      {isDebugVisible && (
-        <div className="fixed bottom-20 right-6 bg-black/80 p-4 rounded-lg text-white text-sm">
-          <h3 className="font-medium mb-2">Debug Info</h3>
-          <div className="space-y-1">
-            <p>Connected: {isConnected ? 'Yes' : 'No'}</p>
-            <p>Remote Users: {remoteUsers.length}</p>
-            <p>Participants: {participants.length}</p>
-            {debugLogs.map((log, i) => (
-              <p key={i} className="text-xs text-gray-400">{log}</p>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Add debug toggle button */}
-      <Button
-        onClick={toggleDebug}
-        variant="ghost"
-        size="sm"
-        className="fixed bottom-6 right-44 bg-black/20 hover:bg-black/30 text-white"
-      >
-        <Icons.activity className="w-4 h-4 mr-2" />
-        {isDebugVisible ? 'Hide Debug' : 'Show Debug'}
-      </Button>
     </div>
   );
 }
