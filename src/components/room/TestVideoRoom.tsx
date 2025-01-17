@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Icons } from '../ui/icons';
@@ -15,22 +15,32 @@ export function TestVideoRoom() {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  // Debug state
+  // Debug state - limit updates
   const [isDebugVisible, setIsDebugVisible] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const debugLogsRef = useRef<string[]>([]);
   const [currentFocusTask, setCurrentFocusTask] = useState('');
-  const [startTime] = useState(() => new Date()); // Initialize start time when component mounts
+  const [startTime] = useState(() => new Date());
   
   // Video container refs
   const localVideoRef = useRef<HTMLDivElement>(null);
   const videoContainersRef = useRef<{ [uid: string]: HTMLDivElement | null }>({});
+  const isPlayingRef = useRef<{ [uid: string]: boolean }>({});
 
-  // Enhanced logging
-  const addLog = (message: string) => {
+  // Throttled logging to prevent excessive updates
+  const addLog = useCallback((message: string) => {
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`${timestamp}: ${message}`);
-    setDebugLogs(prev => [...prev.slice(-9), `${timestamp}: ${message}`]);
-  };
+    const logMessage = `${timestamp}: ${message}`;
+    console.log(logMessage);
+    
+    debugLogsRef.current = [...debugLogsRef.current.slice(-9), logMessage];
+    // Debounce the state update
+    const timeoutId = setTimeout(() => {
+      setDebugLogs(debugLogsRef.current);
+    }, 1000);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   // Use our custom hooks
   const {
@@ -50,88 +60,99 @@ export function TestVideoRoom() {
     updateCurrentTask
   } = useRoomPresence(TEST_ROOM_UUID, user?.id || '');
 
-  // Handle room exit
-  const handleLeaveRoom = async () => {
+  // Handle local video
+  useEffect(() => {
+    if (!localVideoRef.current || !videoTrack) return;
+
+    const container = localVideoRef.current;
     try {
-      // Stop video tracks first
+      videoTrack.play(container);
+      addLog('Local video initialized');
+    } catch (error) {
+      console.error('Local video error:', error);
+    }
+
+    return () => {
+      try {
+        videoTrack.stop();
+        container.innerHTML = '';
+      } catch (error) {
+        console.error('Error cleaning up local video:', error);
+      }
+    };
+  }, [videoTrack]);
+
+  // Handle remote videos - with debouncing
+  useEffect(() => {
+    let isMounted = true;
+    const setupTimeoutRef = useRef<NodeJS.Timeout>();
+
+    const setupRemoteVideos = async () => {
+      if (!isMounted) return;
+
+      // Clear any pending setup
+      if (setupTimeoutRef.current) {
+        clearTimeout(setupTimeoutRef.current);
+      }
+
+      // Debounce the setup
+      setupTimeoutRef.current = setTimeout(async () => {
+        try {
+          // First cleanup any videos that are no longer needed
+          Object.entries(videoContainersRef.current).forEach(([uid, container]) => {
+            const user = remoteUsers.find(u => u.uid === uid);
+            if (!user && container) {
+              container.innerHTML = '';
+              delete isPlayingRef.current[uid];
+            }
+          });
+
+          // Then setup new videos
+          for (const user of remoteUsers) {
+            const container = videoContainersRef.current[user.uid];
+            if (container && user.videoTrack && !isPlayingRef.current[user.uid]) {
+              try {
+                await user.videoTrack.play(container);
+                isPlayingRef.current[user.uid] = true;
+              } catch (error) {
+                console.error(`Error playing remote video for ${user.uid}:`, error);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error in remote video setup:', error);
+        }
+      }, 500);
+    };
+
+    setupRemoteVideos();
+
+    return () => {
+      isMounted = false;
+      if (setupTimeoutRef.current) {
+        clearTimeout(setupTimeoutRef.current);
+      }
+    };
+  }, [remoteUsers]);
+
+  // Handle room exit
+  const handleLeaveRoom = useCallback(async () => {
+    try {
       if (videoTrack) {
         videoTrack.stop();
       }
       if (audioTrack) {
         audioTrack.stop();
       }
-
-      // Let the hooks handle their cleanup
       navigate('/');
     } catch (error) {
       console.error('Error leaving room:', error);
-      // Still navigate away even if there's an error
       navigate('/');
     }
-  };
+  }, [videoTrack, audioTrack, navigate]);
 
-  // Play local video when ref is available
-  useEffect(() => {
-    if (localVideoRef.current && videoTrack) {
-      try {
-        // First stop any existing playback
-        videoTrack.stop();
-        // Then play in the container
-        videoTrack.play(localVideoRef.current);
-        addLog('Local video track playing');
-      } catch (error) {
-        console.error('Error playing local video:', error);
-        addLog('Error playing local video');
-      }
-    }
-  }, [videoTrack, addLog]);
-
-  // Handle remote video refs
-  useEffect(() => {
-    const playRemoteVideo = async (user: any, container: HTMLDivElement) => {
-      try {
-        if (user.videoTrack) {
-          await user.videoTrack.play(container);
-          addLog(`Remote video playing for user: ${user.uid}`);
-        }
-      } catch (error) {
-        console.error('Error playing remote video:', error);
-        addLog(`Error playing remote video for user: ${user.uid}`);
-      }
-    };
-
-    // Clean up and play videos
-    const setupVideos = async () => {
-      // First cleanup any stale tracks
-      Object.entries(videoContainersRef.current).forEach(([uid, el]) => {
-        if (el) {
-          el.innerHTML = '';
-        }
-      });
-
-      // Then play all current remote videos
-      for (const user of remoteUsers) {
-        const container = videoContainersRef.current[user.uid];
-        if (container) {
-          await playRemoteVideo(user, container);
-        }
-      }
-    };
-
-    setupVideos();
-
-    // Cleanup on unmount or when remoteUsers changes
-    return () => {
-      Object.entries(videoContainersRef.current).forEach(([_, el]) => {
-        if (el) {
-          el.innerHTML = '';
-        }
-      });
-    };
-  }, [remoteUsers, addLog]);
-
-  // Remote participant rendering
-  const renderRemoteParticipant = (participant: any) => {
+  // Remote participant rendering - simplified
+  const renderRemoteParticipant = useCallback((participant: any) => {
     const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
     const profile = profiles[participant.user_id];
     
@@ -199,7 +220,7 @@ export function TestVideoRoom() {
         </div>
       </div>
     );
-  };
+  }, [remoteUsers, profiles]);
 
   // Error handling
   useEffect(() => {
