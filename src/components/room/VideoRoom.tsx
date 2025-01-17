@@ -45,7 +45,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const audioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const mountedRef = useRef(true);
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
-  const remoteVideoRefs = useRef<{ [uid: string]: HTMLDivElement | null }>({});
+  const remoteVideoRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   // Initialize user and video
   useEffect(() => {
@@ -82,9 +82,15 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
         await cleanup();
       }
 
-      // Use the currentUserId as the Agora UID (remove dashes to make it a valid number)
-      const uid = parseInt(currentUserId!.replace(/-/g, '').slice(0, 8), 16);
-      console.log('Joining with UID:', uid);
+      if (!currentUserId) {
+        console.error('No currentUserId available');
+        return;
+      }
+
+      // Generate a consistent numeric UID from the UUID
+      const uidStr = currentUserId.replace(/-/g, '').slice(-8);
+      const uid = parseInt(uidStr, 16);
+      console.log('Joining with UID:', uid, 'from userId:', currentUserId);
       
       await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, uid);
       
@@ -356,7 +362,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
 
   // Handle remote users
   useEffect(() => {
-    if (!client) return;
+    if (!client || !currentUserId) return;
 
     const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
       console.log('Remote user published:', user.uid, mediaType);
@@ -371,17 +377,23 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
           return prev.map(u => u.uid === user.uid ? user : u);
         });
 
-        // Convert the numeric UID back to UUID format
-        const remoteUserId = participants.find(p => 
-          parseInt(p.id.replace(/-/g, '').slice(0, 8), 16) === user.uid
-        )?.id;
+        // Find participant by matching their UID pattern
+        const remoteUserId = participants.find(p => {
+          const puidStr = p.id.replace(/-/g, '').slice(-8);
+          const puid = parseInt(puidStr, 16);
+          return puid === user.uid;
+        })?.id;
 
         if (remoteUserId && user.videoTrack) {
           const el = remoteVideoRefs.current[remoteUserId];
           if (el) {
             console.log('Playing video for remote user:', remoteUserId);
             user.videoTrack.play(el);
+          } else {
+            console.log('No video element found for remote user:', remoteUserId);
           }
+        } else {
+          console.log('Could not find matching participant for UID:', user.uid);
         }
       }
 
@@ -402,7 +414,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       client.off('user-published', handleUserPublished);
       client.off('user-left', handleUserLeft);
     };
-  }, [client, participants]);
+  }, [client, participants, currentUserId]);
 
   // Improved unmount cleanup
   useEffect(() => {
@@ -509,6 +521,28 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const handleCompleteModalClose = () => {
     setShowCompleteModal(false);
     navigate('/rooms');
+  };
+
+  // Remote video rendering
+  const renderRemoteVideo = (participant: any) => {
+    const puidStr = participant.id.replace(/-/g, '').slice(-8);
+    const puid = parseInt(puidStr, 16);
+    const remoteUser = remoteUsers.find(u => u.uid === puid);
+
+    return (
+      <div 
+        ref={el => {
+          if (el) {
+            remoteVideoRefs.current[participant.id] = el;
+            if (remoteUser?.videoTrack) {
+              console.log('Playing video for participant:', participant.id);
+              remoteUser.videoTrack.play(el);
+            }
+          }
+        }}
+        className="absolute inset-0"
+      />
+    );
   };
 
   // Main render
@@ -699,18 +733,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
                 .map(participant => (
                   <div key={participant.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                     <div className="aspect-video bg-black/40 relative">
-                      <div 
-                        ref={el => {
-                          if (el) {
-                            remoteVideoRefs.current[participant.id] = el;
-                            const remoteUser = remoteUsers.find(u => u.uid.toString() === participant.id);
-                            if (remoteUser?.videoTrack) {
-                              remoteUser.videoTrack.play(el);
-                            }
-                          }
-                        }}
-                        className="absolute inset-0"
-                      />
+                      {renderRemoteVideo(participant)}
                     </div>
 
                     <div className="p-4">
