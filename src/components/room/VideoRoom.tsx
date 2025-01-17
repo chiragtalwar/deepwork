@@ -120,7 +120,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     }
   };
 
-  // Cleanup function
+  // Cleanup function with better participant handling
   const cleanup = async () => {
     try {
       // Stop all remote user tracks
@@ -281,26 +281,27 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   // Join room
   const joinRoom = async () => {
     try {
-      // First check if user is already in the room
-      const { data: existingParticipant } = await supabase
+      // First cleanup any stale entries for this user
+      await supabase
         .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId)
-        .eq('user_id', currentUserId)
-        .single();
+        .delete()
+        .eq('user_id', currentUserId);
 
-      // If participant exists, don't try to insert again
-      if (!existingParticipant) {
-        const { error: participantError } = await supabase
-          .from('room_participants')
-          .insert({
-            room_id: roomId,
-            user_id: currentUserId,
-            joined_at: new Date().toISOString(),
-            is_focused: true
-          });
+      // Then add the new entry
+      const { error: participantError } = await supabase
+        .from('room_participants')
+        .upsert({
+          room_id: roomId,
+          user_id: currentUserId,
+          joined_at: new Date().toISOString(),
+          is_focused: true
+        }, {
+          onConflict: 'room_id,user_id'
+        });
 
-        if (participantError) throw participantError;
+      if (participantError) {
+        console.error('Error joining room:', participantError);
+        return;
       }
 
       // Fetch room details with correct fields
@@ -403,22 +404,16 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
     };
   }, [client, participants]);
 
-  // Join room on mount
+  // Improved unmount cleanup
   useEffect(() => {
     if (!currentUserId || !roomId) return;
     
     joinRoom();
 
     return () => {
-      supabase
-        .from('room_participants')
-        .delete()
-        .match({ room_id: roomId, user_id: currentUserId })
-        .then(({ error }) => {
-          if (error) console.error('Error leaving room:', error);
-        });
-      
-      cleanup();
+      cleanup().catch(error => {
+        console.error('Error during cleanup:', error);
+      });
     };
   }, [currentUserId, roomId]);
 
