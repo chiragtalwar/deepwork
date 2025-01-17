@@ -91,9 +91,6 @@ export function TestVideoRoom() {
     const playRemoteVideo = async (user: any, container: HTMLDivElement) => {
       try {
         if (user.videoTrack) {
-          // First stop any existing playback
-          user.videoTrack.stop();
-          // Then play in the container
           await user.videoTrack.play(container);
           addLog(`Remote video playing for user: ${user.uid}`);
         }
@@ -103,34 +100,27 @@ export function TestVideoRoom() {
       }
     };
 
-    // Clean up previous video tracks
-    const cleanupPreviousTracks = () => {
+    // Clean up and play videos
+    const setupVideos = async () => {
+      // First cleanup any stale tracks
       Object.entries(videoContainersRef.current).forEach(([uid, el]) => {
-        const remoteUser = remoteUsers.find(u => u.uid === uid);
         if (el) {
-          if (!remoteUser?.videoTrack) {
-            // Remote user no longer has video, clean up the element
-            el.innerHTML = '';
-            addLog(`Cleaned up video for user: ${uid}`);
-          } else {
-            // Ensure video is playing for existing users
-            playRemoteVideo(remoteUser, el);
-          }
+          el.innerHTML = '';
         }
       });
+
+      // Then play all current remote videos
+      for (const user of remoteUsers) {
+        const container = videoContainersRef.current[user.uid];
+        if (container) {
+          await playRemoteVideo(user, container);
+        }
+      }
     };
 
-    // Play new video tracks
-    remoteUsers.forEach(user => {
-      const container = videoContainersRef.current[user.uid];
-      if (container) {
-        playRemoteVideo(user, container);
-      }
-    });
+    setupVideos();
 
-    cleanupPreviousTracks();
-
-    // Cleanup function
+    // Cleanup on unmount or when remoteUsers changes
     return () => {
       Object.entries(videoContainersRef.current).forEach(([_, el]) => {
         if (el) {
@@ -152,11 +142,6 @@ export function TestVideoRoom() {
             ref={el => {
               if (el) {
                 videoContainersRef.current[participant.user_id] = el;
-                // If we already have the video track, play it immediately
-                if (remoteUser?.videoTrack) {
-                  remoteUser.videoTrack.play(el);
-                  addLog(`Immediate play for user: ${participant.user_id}`);
-                }
               }
             }}
             className="absolute inset-0" 
