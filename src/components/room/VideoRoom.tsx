@@ -30,7 +30,6 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserTask, setCurrentUserTask] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -77,11 +76,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   const initializeVideo = async () => {
     try {
       setIsInitializing(true);
-      setError(null);
-      
-      // Join the Agora channel
       await client.join(import.meta.env.VITE_AGORA_APP_ID!, roomId, null, null);
-      setIsConnected(true);
       
       const [videoTrack, audioTrack] = await Promise.all([
         AgoraRTC.createCameraVideoTrack({
@@ -96,11 +91,7 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
         AgoraRTC.createMicrophoneAudioTrack({
           encoderConfig: "speech_low_quality"
         })
-      ]).catch(error => {
-        console.error('Failed to create tracks:', error);
-        setError('Failed to access camera or microphone. Please check your permissions.');
-        throw error;
-      });
+      ]);
 
       videoTrackRef.current = videoTrack;
       audioTrackRef.current = audioTrack;
@@ -109,46 +100,18 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
         videoTrack.play(localVideoRef.current);
       }
 
-      await client.publish([videoTrack, audioTrack]).catch(error => {
-        console.error('Failed to publish tracks:', error);
-        setError('Failed to connect to the video room. Please try again.');
-        throw error;
-      });
-
+      await client.publish([videoTrack, audioTrack]);
       setIsInitializing(false);
     } catch (error) {
       console.error('Error initializing video:', error);
-      setError('Failed to initialize video. Please check your permissions and try again.');
+      setError('Failed to initialize video. Please try again.');
       setIsInitializing(false);
-      setIsConnected(false);
     }
   };
 
-  // Add connection state monitoring
-  useEffect(() => {
-    if (!client) return;
-
-    const handleConnectionStateChange = (curState: string, prevState: string) => {
-      console.log(`Connection state changed from ${prevState} to ${curState}`);
-      setIsConnected(curState === 'CONNECTED');
-      
-      if (curState === 'DISCONNECTED') {
-        setError('Disconnected from video room. Please check your internet connection.');
-      }
-    };
-
-    client.on('connection-state-change', handleConnectionStateChange);
-
-    return () => {
-      client.off('connection-state-change', handleConnectionStateChange);
-    };
-  }, [client]);
-
-  // Enhanced cleanup function
+  // Cleanup function
   const cleanup = async () => {
     try {
-      setIsConnected(false);
-      
       // Stop all remote user tracks
       remoteUsers.forEach(user => {
         if (user.videoTrack) {
@@ -189,7 +152,6 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       }
     } catch (error) {
       console.error('Cleanup error:', error);
-      setError('Error leaving room. Please refresh the page.');
     }
   };
 

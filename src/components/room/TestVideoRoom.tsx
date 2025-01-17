@@ -6,7 +6,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAgoraRoom } from '../../hooks/useAgoraRoom';
 import { useRoomPresence } from '../../hooks/useRoomPresence';
 import { FocusProgress } from './FocusProgress';
-import { supabase } from '../../lib/supabase';
 
 // Room ID - would come from your room management system
 const TEST_ROOM_UUID = '123e4567-e89b-12d3-a456-426614174000';
@@ -52,87 +51,9 @@ export function TestVideoRoom() {
   } = useRoomPresence(TEST_ROOM_UUID, user?.id || '');
 
   // Handle room exit
-  const handleLeaveRoom = async () => {
-    try {
-      // 1. First, stop receiving new events
-      if (client) {
-        client.removeAllListeners();
-      }
-
-      // 2. Stop and cleanup all remote tracks first
-      remoteUsers.forEach(user => {
-        if (user.videoTrack) {
-          user.videoTrack.stop();
-        }
-        if (user.audioTrack) {
-          user.audioTrack.stop();
-        }
-      });
-
-      // 3. Stop and cleanup local tracks
-      if (videoTrack) {
-        videoTrack.stop();
-        videoTrack.close();
-      }
-      if (audioTrack) {
-        audioTrack.stop();
-        audioTrack.close();
-      }
-
-      // 4. Leave the Agora channel
-      if (client && client.connectionState === 'CONNECTED') {
-        await client.leave();
-      }
-
-      // 5. Remove from room_participants table
-      if (user?.id) {
-        const { error: leaveError } = await supabase
-          .from('room_participants')
-          .delete()
-          .eq('room_id', TEST_ROOM_UUID)
-          .eq('user_id', user.id);
-
-        if (leaveError) {
-          console.error('Error removing from room:', leaveError);
-        }
-      }
-
-      // 6. Finally navigate away
-      navigate('/');
-    } catch (error) {
-      console.error('Error during room cleanup:', error);
-      // Even if there's an error, try to navigate away
-      navigate('/');
-    }
+  const handleLeaveRoom = () => {
+    navigate('/');
   };
-
-  // Component cleanup
-  useEffect(() => {
-    return () => {
-      // This ensures cleanup runs when component unmounts
-      handleLeaveRoom();
-    };
-  }, []);
-
-  // Add connection state monitoring
-  useEffect(() => {
-    if (!client) return;
-
-    const handleConnectionStateChange = (curState: string, prevState: string) => {
-      console.log(`Connection state changed from ${prevState} to ${curState}`);
-      
-      if (curState === 'DISCONNECTED') {
-        // If disconnected, ensure we cleanup properly
-        handleLeaveRoom();
-      }
-    };
-
-    client.on('connection-state-change', handleConnectionStateChange);
-
-    return () => {
-      client.off('connection-state-change', handleConnectionStateChange);
-    };
-  }, [client]);
 
   // Play local video when ref is available
   if (localVideoRef.current && videoTrack) {
