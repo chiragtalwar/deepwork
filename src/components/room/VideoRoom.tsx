@@ -112,23 +112,43 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   // Cleanup function
   const cleanup = async () => {
     try {
+      // Stop all remote user tracks
       remoteUsers.forEach(user => {
-        if (user.videoTrack) user.videoTrack.stop();
-        if (user.audioTrack) user.audioTrack.stop();
+        if (user.videoTrack) {
+          user.videoTrack.stop();
+        }
+        if (user.audioTrack) {
+          user.audioTrack.stop();
+        }
       });
       setRemoteUsers([]);
 
+      // Stop and close local tracks
       if (videoTrackRef.current) {
         videoTrackRef.current.stop();
         videoTrackRef.current.close();
+        videoTrackRef.current = null;
       }
       if (audioTrackRef.current) {
         audioTrackRef.current.stop();
         audioTrackRef.current.close();
+        audioTrackRef.current = null;
       }
 
-      if (client.connectionState === 'CONNECTED') {
+      // Clear video refs
+      remoteVideoRefs.current = {};
+
+      // Leave Agora channel if connected
+      if (client && client.connectionState === 'CONNECTED') {
         await client.leave();
+      }
+
+      // Remove from room_participants
+      if (currentUserId && roomId) {
+        await supabase
+          .from('room_participants')
+          .delete()
+          .match({ room_id: roomId, user_id: currentUserId });
       }
     } catch (error) {
       console.error('Cleanup error:', error);
@@ -250,6 +270,28 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
   // Join room
   const joinRoom = async () => {
     try {
+      // First check if user is already in the room
+      const { data: existingParticipant } = await supabase
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('user_id', currentUserId)
+        .single();
+
+      // If participant exists, don't try to insert again
+      if (!existingParticipant) {
+        const { error: participantError } = await supabase
+          .from('room_participants')
+          .insert({
+            room_id: roomId,
+            user_id: currentUserId,
+            joined_at: new Date().toISOString(),
+            is_focused: true
+          });
+
+        if (participantError) throw participantError;
+      }
+
       // Fetch room details with correct fields
       const { data: room, error: roomError } = await supabase
         .from('rooms')
@@ -289,17 +331,6 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
       setRoomDuration(room.duration);
       setRoomStartTime(startTimeFromDB);
 
-      // Then join as participant
-      const { error } = await supabase
-        .from('room_participants')
-        .upsert({
-          room_id: roomId,
-          user_id: currentUserId,
-          joined_at: new Date().toISOString(),
-          is_focused: true
-        });
-
-      if (error) throw error;
       await initializeVideo();
     } catch (error) {
       console.error('Error in joinRoom:', error);
