@@ -43,6 +43,7 @@ export function Room() {
         key={roomId}
         roomId={roomId} 
         displayName={user.email?.split('@')[0] || 'Anonymous'}
+        duration={50}
       />
     </div>
   )
