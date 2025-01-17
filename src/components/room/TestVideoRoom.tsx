@@ -54,36 +54,85 @@ export function TestVideoRoom() {
   // Handle room exit
   const handleLeaveRoom = async () => {
     try {
-      // First cleanup Supabase
+      // 1. First, stop receiving new events
+      if (client) {
+        client.removeAllListeners();
+      }
+
+      // 2. Stop and cleanup all remote tracks first
+      remoteUsers.forEach(user => {
+        if (user.videoTrack) {
+          user.videoTrack.stop();
+        }
+        if (user.audioTrack) {
+          user.audioTrack.stop();
+        }
+      });
+
+      // 3. Stop and cleanup local tracks
+      if (videoTrack) {
+        videoTrack.stop();
+        videoTrack.close();
+      }
+      if (audioTrack) {
+        audioTrack.stop();
+        audioTrack.close();
+      }
+
+      // 4. Leave the Agora channel
+      if (client && client.connectionState === 'CONNECTED') {
+        await client.leave();
+      }
+
+      // 5. Remove from room_participants table
       if (user?.id) {
-        await supabase
+        const { error: leaveError } = await supabase
           .from('room_participants')
           .delete()
-          .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
+          .eq('room_id', TEST_ROOM_UUID)
+          .eq('user_id', user.id);
+
+        if (leaveError) {
+          console.error('Error removing from room:', leaveError);
+        }
       }
-      
-      // Then navigate
+
+      // 6. Finally navigate away
       navigate('/');
     } catch (error) {
-      console.error('Error leaving room:', error);
+      console.error('Error during room cleanup:', error);
+      // Even if there's an error, try to navigate away
       navigate('/');
     }
   };
 
-  // Add cleanup on unmount
+  // Component cleanup
   useEffect(() => {
     return () => {
-      if (user?.id) {
-        supabase
-          .from('room_participants')
-          .delete()
-          .match({ room_id: TEST_ROOM_UUID, user_id: user.id })
-          .then(({ error }) => {
-            if (error) console.error('Error cleaning up room participant:', error);
-          });
+      // This ensures cleanup runs when component unmounts
+      handleLeaveRoom();
+    };
+  }, []);
+
+  // Add connection state monitoring
+  useEffect(() => {
+    if (!client) return;
+
+    const handleConnectionStateChange = (curState: string, prevState: string) => {
+      console.log(`Connection state changed from ${prevState} to ${curState}`);
+      
+      if (curState === 'DISCONNECTED') {
+        // If disconnected, ensure we cleanup properly
+        handleLeaveRoom();
       }
     };
-  }, [user?.id]);
+
+    client.on('connection-state-change', handleConnectionStateChange);
+
+    return () => {
+      client.off('connection-state-change', handleConnectionStateChange);
+    };
+  }, [client]);
 
   // Play local video when ref is available
   if (localVideoRef.current && videoTrack) {
