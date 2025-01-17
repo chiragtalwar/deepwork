@@ -411,7 +411,7 @@ export function TestVideoRoom() {
         onClick={toggleDebug}
         variant="ghost"
         size="sm"
-        className="fixed bottom-6 right-32 bg-black/20 hover:bg-black/30 text-white"
+        className="fixed bottom-6 right-44 bg-black/20 hover:bg-black/30 text-white"
       >
         <Icons.activity className="w-4 h-4 mr-2" />
         {isDebugVisible ? 'Hide Debug' : 'Show Debug'}
