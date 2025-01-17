@@ -320,19 +320,21 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
 
       if (mediaType === 'video') {
         setRemoteUsers(prev => {
-          if (!prev.find(u => u.uid === user.uid)) {
+          const exists = prev.find(u => u.uid === user.uid);
+          if (!exists) {
             return [...prev, user];
           }
-          return prev;
+          return prev.map(u => u.uid === user.uid ? user : u);
         });
 
-        if (remoteVideoRefs.current[user.uid]) {
-          user.videoTrack?.play(remoteVideoRefs.current[user.uid]!);
+        const el = remoteVideoRefs.current[user.uid.toString()];
+        if (el && user.videoTrack) {
+          user.videoTrack.play(el);
         }
       }
 
-      if (mediaType === 'audio') {
-        user.audioTrack?.play();
+      if (mediaType === 'audio' && user.audioTrack) {
+        user.audioTrack.play();
       }
     };
 
@@ -652,14 +654,16 @@ export function VideoRoom({ roomId, displayName, duration }: VideoRoomProps) {
                     <div className="aspect-video bg-black/40 relative">
                       <div 
                         ref={el => {
-                          const remoteUser = remoteUsers.find(u => u.uid === participant.id);
-                          if (el && remoteUser?.videoTrack) {
-                            remoteUser.videoTrack.play(el);
+                          if (el) {
+                            remoteVideoRefs.current[participant.id] = el;
+                            const remoteUser = remoteUsers.find(u => u.uid.toString() === participant.id);
+                            if (remoteUser?.videoTrack) {
+                              remoteUser.videoTrack.play(el);
+                            }
                           }
-                          remoteVideoRefs.current[participant.id] = el;
                         }}
-                    className="absolute inset-0"
-                  />
+                        className="absolute inset-0"
+                      />
                     </div>
 
                     <div className="p-4">
