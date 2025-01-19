@@ -19,6 +19,7 @@ import { Room } from './pages/Room'
 import Profile from './pages/Profile'
 import LoadingTest from './pages/LoadingTest';
 import { TestVideoRoom } from './components/room/TestVideoRoom'
+import TestRoom from './pages/TestRoom'
 
 function App() {
   return (
@@ -50,7 +51,7 @@ function App() {
 
                 {/* Add this to your routes */}
                 <Route path="/loading-test" element={<LoadingTest />} />
-                <Route path="/rooms/test" element={<TestVideoRoom />} />
+                <Route path="/rooms/test/:roomId?" element={<TestRoom />} />
               </Routes>
             </main>
             <Toaster />
