@@ -21,7 +21,10 @@ export function useAgoraRoom(roomId: string, userId: string) {
   const findUserSlot = (uid: string | number) => {
     // Remote users start from slot 2 (slot 1 is for local user)
     const userIndex = remoteUsers.findIndex(u => u.uid === uid);
-    return `video-slot-${userIndex + 2}`; // +2 because slot 1 is reserved for local user
+    // If user not found in remoteUsers, they should go to slot 2 (first remote slot)
+    const slotNumber = userIndex === -1 ? 2 : userIndex + 2;
+    console.log(`[AGORA] Finding slot for user ${uid}: index=${userIndex}, slot=${slotNumber}`);
+    return `video-slot-${slotNumber}`;
   };
 
   // Helper to play video with retries
@@ -33,7 +36,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
       
       const container = document.getElementById(slotId);
       if (!container) {
-        console.log(`[AGORA] Container ${slotId} not found, will retry`);
+        console.log(`[AGORA] Container ${slotId} not found, will retry in 1s`);
         if (retries < maxRetries) {
           retries++;
           await new Promise(resolve => setTimeout(resolve, 1000));

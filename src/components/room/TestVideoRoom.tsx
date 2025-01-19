@@ -271,12 +271,12 @@ export function TestVideoRoom() {
                         ref={el => {
                           // Only set up local video in slot 1 if this is the current user
                           if (slot.index === 1 && isCurrentUser && el && videoTrack) {
-                            console.log(`[UI] Playing local video in slot 1`);
+                            console.log(`[UI] Setting up local video in slot 1`);
                             // Clear the container first
                             el.innerHTML = '';
                             try {
                               videoTrack.play(el);
-                              console.log('[UI] Successfully played local video');
+                              console.log('[UI] Successfully played local video in slot 1');
                             } catch (err) {
                               console.error('[UI] Failed to play local video:', err);
                             }
