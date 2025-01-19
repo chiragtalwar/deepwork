@@ -24,6 +24,43 @@ export function useAgoraRoom(roomId: string, userId: string) {
     return `video-slot-${userIndex + 2}`; // +2 because slot 1 is reserved for local user
   };
 
+  // Helper to play video with retries
+  const playVideoWithRetries = async (videoTrack: any, uid: string | number, maxRetries = 5) => {
+    let retries = 0;
+    const tryPlay = async () => {
+      const slotId = findUserSlot(uid);
+      console.log(`[AGORA] Attempt ${retries + 1} to play video in slot ${slotId} for user ${uid}`);
+      
+      const container = document.getElementById(slotId);
+      if (!container) {
+        console.log(`[AGORA] Container ${slotId} not found, will retry`);
+        if (retries < maxRetries) {
+          retries++;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return tryPlay();
+        }
+        throw new Error(`Container ${slotId} not found after ${maxRetries} retries`);
+      }
+
+      try {
+        // Clear any existing content
+        container.innerHTML = '';
+        await videoTrack.play(container);
+        console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${uid}`);
+      } catch (err) {
+        console.error(`[AGORA] Error playing video:`, err);
+        if (retries < maxRetries) {
+          retries++;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return tryPlay();
+        }
+        throw err;
+      }
+    };
+
+    return tryPlay();
+  };
+
   useEffect(() => {
     if (!userId || !roomId) return;
 
@@ -49,44 +86,26 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
+            // Update remote users state FIRST
+            setRemoteUsers(prev => {
+              const existingUserIndex = prev.findIndex(u => u.uid === user.uid);
+              if (existingUserIndex !== -1) {
+                const updatedUsers = [...prev];
+                updatedUsers[existingUserIndex] = user;
+                return updatedUsers;
+              }
+              return [...prev, user];
+            });
+
             // Play audio immediately
             if (mediaType === "audio" && user.audioTrack) {
               user.audioTrack.play();
               console.log(`[AGORA] Playing audio for ${user.uid}`);
             }
 
-            // Update remote users state FIRST
-            setRemoteUsers(prev => {
-              const existingUserIndex = prev.findIndex(u => u.uid === user.uid);
-              if (existingUserIndex !== -1) {
-                // Update existing user
-                const updatedUsers = [...prev];
-                updatedUsers[existingUserIndex] = user;
-                return updatedUsers;
-              }
-              // Add new user
-              return [...prev, user];
-            });
-
-            // For video, find the correct slot and play
+            // For video, use our retry mechanism
             if (mediaType === "video" && user.videoTrack) {
-              const slotId = findUserSlot(user.uid);
-              console.log(`[AGORA] Attempting to play video in slot ${slotId} for user ${user.uid}`);
-
-              // Stop any existing video in this slot first
-              const container = document.getElementById(slotId);
-              if (container) {
-                // Clear the container first
-                container.innerHTML = '';
-                try {
-                  user.videoTrack.play(container);
-                  console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${user.uid}`);
-                } catch (err) {
-                  console.error(`[AGORA] Failed to play video in slot ${slotId}:`, err);
-                }
-              } else {
-                console.error(`[AGORA] Slot ${slotId} container not found`);
-              }
+              await playVideoWithRetries(user.videoTrack, user.uid);
             }
           } catch (err) {
             console.error(`[AGORA] Error handling user-published:`, err);

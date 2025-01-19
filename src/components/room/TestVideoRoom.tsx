@@ -274,7 +274,12 @@ export function TestVideoRoom() {
                             console.log(`[UI] Playing local video in slot 1`);
                             // Clear the container first
                             el.innerHTML = '';
-                            videoTrack.play(el);
+                            try {
+                              videoTrack.play(el);
+                              console.log('[UI] Successfully played local video');
+                            } catch (err) {
+                              console.error('[UI] Failed to play local video:', err);
+                            }
                           }
                         }}
                       />
