@@ -24,7 +24,7 @@ export function TestVideoRoom() {
   
   // Video container refs
   const localVideoRef = useRef<HTMLDivElement>(null);
-  const videoContainersRef = useRef<{ [uid: string]: HTMLDivElement | null }>({});
+  const remoteVideoRefs = useRef<{ [uid: string]: HTMLDivElement | null }>({});
 
   // Enhanced logging
   const addLog = (message: string) => {
@@ -134,10 +134,37 @@ export function TestVideoRoom() {
     };
   }, [user?.id]);
 
-  // Play local video when ref is available
-  if (localVideoRef.current && videoTrack) {
-    videoTrack.play(localVideoRef.current);
-  }
+  // Play local video when track is available
+  useEffect(() => {
+    if (localVideoRef.current && videoTrack) {
+      try {
+        videoTrack.play(localVideoRef.current);
+        console.log("[UI] Playing local video track");
+      } catch (err) {
+        console.error("[UI] Failed to play local video:", err);
+      }
+    }
+  }, [videoTrack, localVideoRef.current]);
+
+  // Play remote videos when tracks are available
+  useEffect(() => {
+    console.log("[UI] Remote users updated:", remoteUsers);
+    remoteUsers.forEach(user => {
+      if (user.videoTrack) {
+        const container = remoteVideoRefs.current[user.uid];
+        if (container) {
+          try {
+            user.videoTrack.play(container);
+            console.log(`[UI] Playing remote video for user ${user.uid}`);
+          } catch (err) {
+            console.error(`[UI] Failed to play remote video for user ${user.uid}:`, err);
+          }
+        } else {
+          console.log(`[UI] Container not ready for user ${user.uid}`);
+        }
+      }
+    });
+  }, [remoteUsers]);
 
   // Render the room UI
   return (
@@ -252,17 +279,17 @@ export function TestVideoRoom() {
                   <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                     <div className="aspect-video bg-black/40 relative">
                       {isCurrentUser ? (
-                        // Local video container - always ready
+                        // Local video container
                         <div ref={localVideoRef} className="absolute inset-0" />
                       ) : (
-                        // Remote video container - always ready with user ID
+                        // Remote video container
                         <div 
-                          id={`video-${participant.user_id}`}
+                          ref={el => remoteVideoRefs.current[participant.user_id] = el}
                           className="absolute inset-0" 
                         />
                       )}
                       
-                      {/* Show camera not available message if no video */}
+                      {/* Show camera not available message */}
                       {(!videoTrack && isCurrentUser) || (!remoteUser?.videoTrack && !isCurrentUser) ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                           <div className="flex flex-col items-center">
