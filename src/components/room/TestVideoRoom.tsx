@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAgoraRoom } from '@/hooks/useAgoraRoom';
 import { useRoomPresence } from '@/hooks/useRoomPresence';
@@ -32,6 +32,39 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
   const { user } = useUser();
   const { videoTrack, remoteUsers, client } = useAgoraRoom(roomId, user?.id || '');
   const { error: presenceError } = useRoomPresence(roomId);
+  const [activeVideoSlots, setActiveVideoSlots] = useState<Set<string>>(new Set());
+
+  // Track video elements being added to slots
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.target instanceof HTMLElement) {
+          const slotId = mutation.target.id;
+          const hasVideo = mutation.target.querySelector('video') !== null;
+          
+          setActiveVideoSlots(prev => {
+            const next = new Set(prev);
+            if (hasVideo) {
+              next.add(slotId);
+            } else {
+              next.delete(slotId);
+            }
+            return next;
+          });
+        }
+      });
+    });
+
+    // Observe all video slots
+    VIDEO_SLOTS.forEach(slot => {
+      const container = document.getElementById(slot.id);
+      if (container) {
+        observer.observe(container, { childList: true, subtree: true });
+      }
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   // Log state changes
   useEffect(() => {
@@ -75,23 +108,17 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
     if (slot.index === 1) {
       const hasParticipant = !!participant;
       const hasVideo = !!videoTrack;
-      console.log(`[ROOM] Slot 1: hasParticipant=${hasParticipant}, hasVideo=${hasVideo}`);
       return !hasParticipant || !hasVideo;
     }
     
     // For other slots, check if we have both:
     // 1. A participant assigned to this slot
-    // 2. An actual video element playing in the slot
+    // 2. An active video in the slot
     if (!participant) {
-      console.log(`[ROOM] Slot ${slot.index}: No participant assigned`);
       return true;
     }
 
-    const container = document.getElementById(slot.id);
-    const hasVideoElement = container?.querySelector('video') !== null;
-    
-    console.log(`[ROOM] Slot ${slot.index}: User=${participant.user_id}, hasVideoElement=${hasVideoElement}`);
-    return !hasVideoElement;
+    return !activeVideoSlots.has(slot.id);
   };
 
   // Handle room exit
