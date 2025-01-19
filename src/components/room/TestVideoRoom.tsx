@@ -47,23 +47,45 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
       return user ? { user_id: user.id, joined_at: new Date().toISOString() } : null;
     }
 
-    // For slot 2, return the first remote participant (if any)
-    if (slot.index === 2 && participants.length > 0) {
-      const otherParticipant = participants.find(p => p.user_id !== user?.id);
-      if (otherParticipant) {
-        console.log(`[ROOM] Assigned participant ${otherParticipant.user_id} to slot ${slot.index}`);
+    // For slots 2-5, find participants based on join order
+    if (slot.index >= 2 && slot.index <= 5) {
+      const otherParticipants = participants
+        .filter(p => p.user_id !== user?.id)
+        .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+
+      const participantIndex = slot.index - 2;
+      const participant = otherParticipants[participantIndex];
+      
+      if (participant) {
+        console.log(`[ROOM] Assigned participant ${participant.user_id} to slot ${slot.index}`);
+        return participant;
       }
-      return otherParticipant || null;
     }
 
-    // Other slots are empty for now (we only support 2 participants in test room)
     return null;
   };
 
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    const participant = getSlotParticipant(slot);
-    return !participant;
+    // For slot 1, check if we have a local user
+    if (slot.index === 1) {
+      return !user;
+    }
+
+    // For slots 2-5, check both participants and remote users
+    if (slot.index >= 2 && slot.index <= 5) {
+      const otherParticipants = participants
+        .filter(p => p.user_id !== user?.id)
+        .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+
+      const participantIndex = slot.index - 2;
+      const hasParticipant = participantIndex < otherParticipants.length;
+      const hasRemoteUser = remoteUsers.length > participantIndex;
+
+      return !hasParticipant && !hasRemoteUser;
+    }
+
+    return true;
   };
 
   // Handle room exit
@@ -100,24 +122,24 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
     } catch (err) {
       console.error('[ROOM] Error leaving room:', err);
       // Even if there's an error, try to navigate away
-      navigate('/');
+    navigate('/');
     }
   };
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* Header */}
+          {/* Header */}
       <div className="absolute top-0 left-0 right-0 h-16 bg-background/80 backdrop-blur-sm border-b border-border flex items-center px-4">
         <div className="flex-1">
           <h1 className="text-lg font-semibold">Test Video Room</h1>
-        </div>
+            </div>
         <button
           onClick={handleLeaveRoom}
           className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
         >
           Leave Room
         </button>
-      </div>
+                </div>
 
       {/* Video Grid */}
       <div className="absolute inset-0 pt-16 p-4">
@@ -133,8 +155,8 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
                   {/* Video Container */}
                   <div 
                     id={slot.id}
-                    className="absolute inset-0"
-                  />
+                          className="absolute inset-0" 
+                        />
 
                   {/* Empty Slot Overlay */}
                   {isSlotEmpty(slot) && (
@@ -156,7 +178,7 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
                           ) : (
                             <Icons.user className="w-4 h-4 text-white/70" />
                           )}
-                        </div>
+                    </div>
                         <span className="text-sm text-white/90">{profile.full_name}</span>
                         {isCurrentUser && <span className="text-xs text-white/50">(You)</span>}
                       </div>

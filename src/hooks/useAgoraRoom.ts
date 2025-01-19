@@ -33,10 +33,20 @@ export function useAgoraRoom(roomId: string, userId: string) {
       return 'video-slot-1';
     }
     
-    // For remote users, assign to slots 2-5 sequentially
-    const slotNumber = 2; // Start with slot 2 for the first remote user
-    console.log(`[AGORA] Assigning remote user ${uid} to slot ${slotNumber}`);
-    return `video-slot-${slotNumber}`;
+    // For remote users, find the next available slot (2-5)
+    const takenSlots = remoteUsers
+      .filter(u => String(u.uid) !== userId)
+      .map((_, index) => index + 2);
+    
+    const nextSlot = takenSlots.length > 0 ? Math.max(...takenSlots) + 1 : 2;
+    
+    if (nextSlot > 5) {
+      console.log(`[AGORA] No available slots for user ${uid} (max capacity reached)`);
+      return null;
+    }
+    
+    console.log(`[AGORA] Assigning remote user ${uid} to slot ${nextSlot}`);
+    return `video-slot-${nextSlot}`;
   };
 
   // Helper: Play video with retries
@@ -126,6 +136,11 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
               // Find slot and play video
               const slotId = findUserSlot(user.uid);
+              if (!slotId) {
+                console.error(`[AGORA] No valid slot found for user ${user.uid}`);
+                return;
+              }
+              
               console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
               
               const container = document.getElementById(slotId);
