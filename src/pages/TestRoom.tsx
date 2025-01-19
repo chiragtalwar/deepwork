@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { TestVideoRoom } from '@/components/room/TestVideoRoom';
+import { useUserStats } from '@/hooks/useUserStats';
 
 interface Participant {
   user_id: string;
@@ -18,78 +19,64 @@ interface Profile {
 const TEST_ROOM_ID = '123e4567-e89b-12d3-a456-426614174000';
 
 export default function TestRoom() {
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
-  const { roomId } = useParams(); 
+  const { roomId = 'test' } = useParams();
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, any>>({});
   
-  // Use the provided roomId if it's a valid UUID, otherwise use TEST_ROOM_ID
-  const actualRoomId = roomId?.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-    ? roomId
-    : TEST_ROOM_ID;
+  // Get user IDs for stats
+  const userIds = participants.map(p => p.user_id);
+  const { stats: userStats } = useUserStats(userIds);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Get participants
-        const { data: participantsData, error: participantsError } = await supabase
-          .from('room_participants')
-          .select('*')
-          .eq('room_id', actualRoomId);
-        
-        if (participantsError) {
-          console.error('[ROOM] Error fetching participants:', participantsError);
-          return;
-        }
-        
-        console.log('[ROOM] Fetched participants:', participantsData);
-        setParticipants(participantsData || []);
-
-        // Get profiles
-        if (participantsData?.length) {
-          const { data: profilesData, error: profilesError } = await supabase
-            .from('profiles')
+    // Subscribe to room_participants changes
+    const subscription = supabase
+      .channel(`room_participants:${roomId}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'room_participants',
+          filter: `room_id=eq.${roomId}`
+        }, 
+        async (payload) => {
+          // Fetch updated participants
+          const { data: participants } = await supabase
+            .from('room_participants')
             .select('*')
-            .in('id', participantsData.map(p => p.user_id));
-          
-          if (profilesError) {
-            console.error('[ROOM] Error fetching profiles:', profilesError);
-            return;
+            .eq('room_id', roomId);
+
+          if (participants) {
+            setParticipants(participants);
+            
+            // Fetch profiles for all participants
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, full_name, avatar_url, bio')
+              .in('id', participants.map(p => p.user_id));
+
+            if (profiles) {
+              const profileMap = profiles.reduce((acc, profile) => ({
+                ...acc,
+                [profile.id]: profile
+              }), {});
+              setProfiles(profileMap);
+            }
           }
-
-          console.log('[ROOM] Fetched profiles:', profilesData);
-          const profilesMap = Object.fromEntries(
-            (profilesData || []).map(p => [p.id, p])
-          );
-          setProfiles(profilesMap);
         }
-      } catch (err) {
-        console.error('[ROOM] Error in fetchData:', err);
-      }
-    };
-
-    fetchData();
-    
-    // Subscribe to changes
-    const participantsSubscription = supabase
-      .channel(`room_participants:${actualRoomId}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'room_participants',
-        filter: `room_id=eq.${actualRoomId}`
-      }, fetchData)
+      )
       .subscribe();
 
     return () => {
-      participantsSubscription.unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [actualRoomId]);
+  }, [roomId]);
 
   return (
     <TestVideoRoom
-      roomId={actualRoomId}
+      roomId={roomId}
       participants={participants}
       profiles={profiles}
+      userStats={userStats}
     />
   );
 } 

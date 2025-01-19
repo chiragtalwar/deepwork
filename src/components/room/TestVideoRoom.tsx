@@ -25,10 +25,23 @@ interface TestVideoRoomProps {
   profiles: Record<string, {
     full_name: string;
     avatar_url: string | null;
+    bio: string;
+  }>;
+  userStats: Record<string, {
+    total_focus_minutes: number;
   }>;
 }
 
-export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomProps) {
+// Helper function to format minutes into hours
+const formatHours = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours === 0) return `${remainingMinutes}m`;
+  if (remainingMinutes === 0) return `${hours}h`;
+  return `${hours}h ${remainingMinutes}m`;
+};
+
+export function TestVideoRoom({ roomId, participants, profiles, userStats }: TestVideoRoomProps) {
   const navigate = useNavigate();
   const { user } = useUser();
   const { videoTrack, remoteUsers, client, toggleVideo, toggleAudio } = useAgoraRoom(roomId, user?.id || '');
@@ -263,6 +276,7 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
                 const participant = getSlotParticipant(slot);
                 const isCurrentUser = participant?.user_id === user?.id;
                 const profile = participant ? profiles[participant.user_id] : null;
+                const stats = participant ? userStats[participant.user_id] : null;
                 
                 return (
                   <div key={slot.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
@@ -335,69 +349,55 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
                     {/* Profile Info Section */}
                     <div className="p-4">
                       {participant && profile ? (
-                        <>
-                          {/* Profile Header */}
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
-                              {profile.avatar_url ? (
-                                <img src={profile.avatar_url} alt="" className="w-full h-full rounded-full" />
-                              ) : (
-                                <span className="text-sky-300 font-medium">
-                                  {profile.full_name?.[0] || '?'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h3 className="text-white font-medium truncate">
-                                {profile.full_name}
-                              </h3>
-                              <p className="text-sky-200/60 text-sm truncate">
-                                Deep Focus Enthusiast
-                              </p>
-                            </div>
+                        <div className="space-y-3">
+                          {/* Bio */}
+                          <div className="bg-black/20 rounded-lg p-3">
+                            <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
+                            <p className="text-white/90 text-sm line-clamp-2">
+                              {profile.bio || 'No bio added yet'}
+                            </p>
                           </div>
 
-                          {/* Profile Info Cards */}
-                          <div className="space-y-2.5">
-                            <div className="bg-black/20 rounded-lg p-3">
-                              <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
-                              <p className="text-white/90 text-sm">
-                                {isCurrentUser ? (
-                                  <div className="flex gap-2 items-center">
-                                    <input
-                                      type="text"
-                                      value={currentTask}
-                                      onChange={(e) => setCurrentTask(e.target.value)}
-                                      onKeyDown={(e) => e.key === 'Enter' && handleTaskUpdate()}
-                                      placeholder="What are you working on?"
-                                      className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none"
-                                    />
-                                    <button
-                                      onClick={handleTaskUpdate}
-                                      disabled={isUpdatingTask}
-                                      className="h-7 w-7 rounded-full bg-sky-500/10 hover:bg-sky-500/20 flex items-center justify-center disabled:opacity-50"
-                                    >
-                                      {isUpdatingTask ? (
-                                        <div className="h-3 w-3 border-2 border-t-transparent border-sky-400 rounded-full animate-spin" />
-                                      ) : (
-                                        <Icons.check className="h-3 w-3 text-sky-400" />
-                                      )}
-                                    </button>
-                                  </div>
-                                ) : (
-                                  participant?.current_focus_task || 'Not specified'
-                                )}
-                              </p>
-                            </div>
-
-                            <div className="bg-black/20 rounded-lg p-3">
-                              <p className="text-white/60 text-xs font-medium mb-1">Focus Time</p>
-                              <p className="text-white/90 text-sm">
-                                {isCurrentUser ? '25 minutes' : 'Joined for deep work'}
-                              </p>
-                            </div>
+                          {/* Deep Work Hours */}
+                          <div className="bg-black/20 rounded-lg p-3">
+                            <p className="text-white/60 text-xs font-medium mb-1">Total Deep Work</p>
+                            <p className="text-white/90 text-sm">
+                              {stats ? formatHours(stats.total_focus_minutes) : '0h'} of focused work
+                            </p>
                           </div>
-                        </>
+
+                          {/* Current Focus */}
+                          <div className="bg-black/20 rounded-lg p-3">
+                            <p className="text-white/60 text-xs font-medium mb-1">Currently Focusing On</p>
+                            {isCurrentUser ? (
+                              <div className="flex gap-2 items-center">
+                                <input
+                                  type="text"
+                                  value={currentTask}
+                                  onChange={(e) => setCurrentTask(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && handleTaskUpdate()}
+                                  placeholder="What are you working on?"
+                                  className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none"
+                                />
+                                <button
+                                  onClick={handleTaskUpdate}
+                                  disabled={isUpdatingTask}
+                                  className="h-7 w-7 rounded-full bg-sky-500/10 hover:bg-sky-500/20 flex items-center justify-center disabled:opacity-50"
+                                >
+                                  {isUpdatingTask ? (
+                                    <div className="h-3 w-3 border-2 border-t-transparent border-sky-400 rounded-full animate-spin" />
+                                  ) : (
+                                    <Icons.check className="h-3 w-3 text-sky-400" />
+                                  )}
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-white/90 text-sm">
+                                {participant.current_focus_task || 'Not specified'}
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       ) : (
                         <>
                           <div className="flex items-center gap-3 mb-3">
