@@ -214,10 +214,18 @@ export function TestVideoRoom() {
           {/* Main Grid */}
           <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
-              {/* Current User Card */}
+              {/* Current User Card - Only show local video here */}
               <div className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                 <div className="aspect-video bg-black/40 relative">
                   <div ref={localVideoRef} className="absolute inset-0" />
+                  {!videoTrack && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <div className="flex flex-col items-center">
+                        <Icons.video className="w-6 h-6 text-white/40 mb-2" />
+                        <p className="text-white/80 text-sm">Camera not available</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="p-4">
                   {/* Profile Header */}
@@ -269,15 +277,9 @@ export function TestVideoRoom() {
                 </div>
               </div>
 
-              {/* Remote Participants */}
+              {/* Remote Participants - Only show other users here */}
               {participants
-                .filter(p => {
-                  // Filter out:
-                  // 1. Current user
-                  // 2. Participants who have left (no remote user)
-                  const remoteUser = remoteUsers.find(u => u.uid === p.user_id);
-                  return p.user_id !== user?.id && remoteUser;
-                })
+                .filter(p => p.user_id !== user?.id) // Filter out current user
                 .slice(0, 4)
                 .map(participant => {
                   const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
@@ -296,7 +298,7 @@ export function TestVideoRoom() {
                           className="absolute inset-0" 
                         />
                         {!remoteUser?.videoTrack && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                             <div className="flex flex-col items-center">
                               <Icons.video className="w-6 h-6 text-white/40 mb-2" />
                               <p className="text-white/80 text-sm">Camera not available</p>

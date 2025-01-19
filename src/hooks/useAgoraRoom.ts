@@ -89,37 +89,59 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
     const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
       try {
+        console.log(`Remote user ${user.uid} published ${mediaType} track`);
+        
         // Subscribe to the remote user
         await client.current.subscribe(user, mediaType);
+        console.log(`Subscribed to ${mediaType} track of user ${user.uid}`);
         
         // Update remote users list
         setRemoteUsers(prev => {
+          // If user exists, update their tracks
           const exists = prev.find(u => u.uid === user.uid);
-          if (!exists) {
-            return [...prev, user];
+          if (exists) {
+            return prev.map(u => u.uid === user.uid ? user : u);
           }
-          return prev.map(u => u.uid === user.uid ? user : u);
+          // If user doesn't exist, add them
+          return [...prev, user];
         });
 
-        // Play the track
+        // Play audio track immediately
         if (mediaType === 'audio' && user.audioTrack) {
           user.audioTrack.play();
+          console.log(`Playing audio track of user ${user.uid}`);
         }
+
+        // Video track will be played by the component when the ref is ready
       } catch (error) {
-        console.error('Failed to handle remote user published:', error);
+        console.error(`Failed to handle remote user ${user.uid} published:`, error);
       }
     };
 
     const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      console.log(`Remote user ${user.uid} unpublished ${mediaType} track`);
+      
       if (mediaType === 'video' && user.videoTrack) {
         user.videoTrack.stop();
       }
       if (mediaType === 'audio' && user.audioTrack) {
         user.audioTrack.stop();
       }
+
+      // Update remote users list to reflect the unpublished track
+      setRemoteUsers(prev => 
+        prev.map(u => u.uid === user.uid ? user : u)
+      );
     };
 
     const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      console.log(`Remote user ${user.uid} left the channel`);
+      
+      // Stop all tracks from this user
+      if (user.videoTrack) user.videoTrack.stop();
+      if (user.audioTrack) user.audioTrack.stop();
+      
+      // Remove user from the list
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
     };
 
