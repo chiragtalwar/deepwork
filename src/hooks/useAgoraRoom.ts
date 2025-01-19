@@ -6,45 +6,49 @@ import AgoraRTC, {
   IAgoraRTCRemoteUser
 } from 'agora-rtc-sdk-ng';
 
+// Types for our hook state
+interface AgoraRoomState {
+  isConnected: boolean;
+  error: string | null;
+}
+
 export function useAgoraRoom(roomId: string, userId: string) {
-  // Core refs that persist through re-renders
+  // Core Agora client and track refs
   const client = useRef<IAgoraRTCClient>();
   const localVideoTrack = useRef<ICameraVideoTrack | null>(null);
   const localAudioTrack = useRef<IMicrophoneAudioTrack | null>(null);
   
-  // States
+  // State
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper to find a user's slot based on participant index
+  // Helper: Find slot for a user
   const findUserSlot = (uid: string | number) => {
-    // Convert uid to string for consistent comparison
-    const uidStr = String(uid);
-    
-    // Current browser user always sees themselves in slot 1
-    if (uidStr === userId) {
-      console.log(`[AGORA] Current browser user ${uidStr} assigned to slot 1`);
+    // Current user always goes in slot 1
+    if (String(uid) === userId) {
+      console.log(`[AGORA] Current user ${uid} assigned to slot 1`);
       return 'video-slot-1';
     }
     
-    // For other participants, assign slots 2-5 based on join order
-    const userIndex = remoteUsers.findIndex(u => String(u.uid) === uidStr);
-    const slotNumber = userIndex + 2; // +2 because slots 2-5 are for other participants
-    console.log(`[AGORA] Other participant ${uidStr} assigned to slot ${slotNumber} (index: ${userIndex})`);
+    // Remote users get slots 2-5 based on join order
+    const userIndex = remoteUsers.findIndex(u => String(u.uid) === String(uid));
+    const slotNumber = userIndex + 2; // +2 because slots 2-5 are for remote users
+    console.log(`[AGORA] Remote user ${uid} assigned to slot ${slotNumber}`);
     return `video-slot-${slotNumber}`;
   };
 
-  // Helper to play video with retries
+  // Helper: Play video with retries
   const playVideoWithRetries = async (videoTrack: any, uid: string | number, maxRetries = 5) => {
     let retries = 0;
+    
     const tryPlay = async () => {
       const slotId = findUserSlot(uid);
       console.log(`[AGORA] Attempt ${retries + 1} to play video in slot ${slotId} for user ${uid}`);
       
       const container = document.getElementById(slotId);
       if (!container) {
-        console.log(`[AGORA] Container ${slotId} not found, will retry in 1s (attempt ${retries + 1}/${maxRetries})`);
+        console.log(`[AGORA] Container ${slotId} not found, will retry in 1s`);
         if (retries < maxRetries) {
           retries++;
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -54,12 +58,11 @@ export function useAgoraRoom(roomId: string, userId: string) {
       }
 
       try {
-        // Clear any existing content
-        container.innerHTML = '';
+        container.innerHTML = ''; // Clear existing content
         await videoTrack.play(container);
         console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${uid}`);
       } catch (err) {
-        console.error(`[AGORA] Error playing video in slot ${slotId}:`, err);
+        console.error(`[AGORA] Error playing video:`, err);
         if (retries < maxRetries) {
           retries++;
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -72,10 +75,12 @@ export function useAgoraRoom(roomId: string, userId: string) {
     return tryPlay();
   };
 
+  // Main setup effect
   useEffect(() => {
     if (!userId || !roomId) return;
-
+    
     let mounted = true;
+    console.log(`[AGORA] Setting up room ${roomId} for user ${userId}`);
 
     const setupAgora = async () => {
       try {
@@ -88,7 +93,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
           console.log("[AGORA] Client created");
         }
 
-        // 2. Set up event handlers BEFORE joining
+        // 2. Set up event handlers
         client.current.on("user-published", async (user, mediaType) => {
           console.log(`[AGORA] User ${user.uid} published ${mediaType}`);
           
@@ -97,12 +102,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
-            if (mediaType === "audio" && user.audioTrack) {
-              user.audioTrack.play();
-              console.log(`[AGORA] Playing audio for ${user.uid}`);
-            }
-
-            // Update remote users state AFTER successful subscription
+            // Update remote users state first
             setRemoteUsers(prev => {
               const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
               if (existingUserIndex !== -1) {
@@ -112,6 +112,12 @@ export function useAgoraRoom(roomId: string, userId: string) {
               }
               return [...prev, user];
             });
+
+            // Handle audio immediately
+            if (mediaType === "audio" && user.audioTrack) {
+              user.audioTrack.play();
+              console.log(`[AGORA] Playing audio for ${user.uid}`);
+            }
 
             // For video, use our retry mechanism
             if (mediaType === "video" && user.videoTrack) {
@@ -192,6 +198,8 @@ export function useAgoraRoom(roomId: string, userId: string) {
     // Cleanup
     return () => {
       mounted = false;
+      console.log(`[AGORA] Cleaning up room ${roomId} for user ${userId}`);
+      
       const cleanup = async () => {
         try {
           // Stop and close local tracks
@@ -210,6 +218,11 @@ export function useAgoraRoom(roomId: string, userId: string) {
             client.current.removeAllListeners();
             console.log("[AGORA] Left channel and cleaned up");
           }
+
+          // Reset state
+          setIsConnected(false);
+          setRemoteUsers([]);
+          setError(null);
         } catch (err) {
           console.error("[AGORA] Cleanup error:", err);
         }
@@ -226,4 +239,4 @@ export function useAgoraRoom(roomId: string, userId: string) {
     isConnected,
     error
   };
-} 
+}
