@@ -72,24 +72,70 @@ export function useAgoraRoom(roomId: string, userId: string) {
         client.on("user-published", async (user, mediaType) => {
           console.log("[AGORA] User published:", user.uid, mediaType);
           
-          // Subscribe to the remote user
-          await client.subscribe(user, mediaType);
-          console.log("[AGORA] Subscribed to:", user.uid, mediaType);
+          try {
+            // Subscribe to the remote user
+            await client.subscribe(user, mediaType);
+            console.log("[AGORA] Subscribed to:", user.uid, mediaType);
 
-          if (mediaType === "audio") {
-            user.audioTrack?.play();
-          }
+            // Update remote users state FIRST
+            setRemoteUsers(prev => {
+              const exists = prev.find(u => u.uid === user.uid);
+              if (exists) {
+                return prev.map(u => u.uid === user.uid ? user : u);
+              }
+              return [...prev, user];
+            });
 
-          // Update remote users state
-          setRemoteUsers(prev => {
-            const exists = prev.find(u => u.uid === user.uid);
-            if (exists) {
-              return prev.map(u => u.uid === user.uid ? user : u);
+            // Handle audio immediately
+            if (mediaType === "audio" && user.audioTrack) {
+              user.audioTrack.play();
+              console.log("[AGORA] Playing audio for:", user.uid);
             }
-            return [...prev, user];
-          });
 
-          // For video, we'll let the component handle playing since it has the containers
+            // For video, we need to ensure the container exists
+            if (mediaType === "video" && user.videoTrack) {
+              console.log("[AGORA] Setting up video for:", user.uid);
+              
+              const playVideo = async () => {
+                return new Promise<void>((resolve, reject) => {
+                  let attempts = 0;
+                  const maxAttempts = 20;
+                  
+                  const tryPlay = () => {
+                    const container = document.querySelector(`[data-user-video="${user.uid}"]`);
+                    if (container) {
+                      try {
+                        user.videoTrack?.play(container as HTMLElement);
+                        console.log(`[AGORA] Successfully played video for user ${user.uid}`);
+                        resolve();
+                      } catch (err) {
+                        console.error(`[AGORA] Error playing video for ${user.uid}:`, err);
+                        reject(err);
+                      }
+                    } else {
+                      attempts++;
+                      if (attempts < maxAttempts) {
+                        console.log(`[AGORA] Container not found for ${user.uid}, attempt ${attempts}/${maxAttempts}`);
+                        setTimeout(tryPlay, 500);
+                      } else {
+                        const error = new Error(`Failed to find video container for ${user.uid} after ${maxAttempts} attempts`);
+                        console.error("[AGORA]", error);
+                        reject(error);
+                      }
+                    }
+                  };
+                  
+                  tryPlay();
+                });
+              };
+
+              playVideo().catch(err => {
+                console.error("[AGORA] Final video play error:", err);
+              });
+            }
+          } catch (err) {
+            console.error("[AGORA] Error handling user published event:", err);
+          }
         });
 
         client.on("user-unpublished", (user, mediaType) => {

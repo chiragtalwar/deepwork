@@ -285,6 +285,7 @@ export function TestVideoRoom() {
                         // Remote video container
                         <div 
                           ref={el => remoteVideoRefs.current[participant.user_id] = el}
+                          data-user-video={participant.user_id}
                           className="absolute inset-0" 
                         />
                       )}
