@@ -49,43 +49,41 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
 
     // For slots 2-5, find participants based on join order
     if (slot.index >= 2 && slot.index <= 5) {
+      // Filter out current user and sort by join time
       const otherParticipants = participants
         .filter(p => p.user_id !== user?.id)
         .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
 
+      // Get participant for this slot (index - 2 because slots start at 2)
       const participantIndex = slot.index - 2;
-      const participant = otherParticipants[participantIndex];
-      
-      if (participant) {
-        console.log(`[ROOM] Assigned participant ${participant.user_id} to slot ${slot.index}`);
+      if (participantIndex < otherParticipants.length) {
+        const participant = otherParticipants[participantIndex];
+        console.log(`[ROOM] Slot ${slot.index}: Assigned to participant ${participant.user_id} (joined at ${participant.joined_at})`);
         return participant;
       }
     }
 
+    console.log(`[ROOM] Slot ${slot.index}: Empty`);
     return null;
   };
 
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    // For slot 1, check if we have a local user
+    const participant = getSlotParticipant(slot);
+    
+    // For slot 1, we need both a participant (user) and a video track
     if (slot.index === 1) {
-      return !user;
+      const hasParticipant = !!participant;
+      const hasVideo = !!videoTrack;
+      console.log(`[ROOM] Slot 1: hasParticipant=${hasParticipant}, hasVideo=${hasVideo}`);
+      return !hasParticipant || !hasVideo;
     }
-
-    // For slots 2-5, check both participants and remote users
-    if (slot.index >= 2 && slot.index <= 5) {
-      const otherParticipants = participants
-        .filter(p => p.user_id !== user?.id)
-        .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
-
-      const participantIndex = slot.index - 2;
-      const hasParticipant = participantIndex < otherParticipants.length;
-      const hasRemoteUser = remoteUsers.length > participantIndex;
-
-      return !hasParticipant && !hasRemoteUser;
-    }
-
-    return true;
+    
+    // For other slots, we need both a participant and a matching remote user
+    const hasParticipant = !!participant;
+    const hasRemoteUser = remoteUsers.some(u => String(u.uid) === participant?.user_id);
+    console.log(`[ROOM] Slot ${slot.index}: hasParticipant=${hasParticipant}, hasRemoteUser=${hasRemoteUser}`);
+    return !hasParticipant || !hasRemoteUser;
   };
 
   // Handle room exit

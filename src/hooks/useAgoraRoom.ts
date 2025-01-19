@@ -32,30 +32,18 @@ export function useAgoraRoom(roomId: string, userId: string) {
       console.log(`[AGORA] Assigning current user ${uid} to slot 1`);
       return 'video-slot-1';
     }
+
+    // For remote users, check the participants array to maintain consistent ordering
+    const otherParticipants = client.current?.remoteUsers || [];
+    const participantIndex = otherParticipants.findIndex(p => String(p.uid) === String(uid));
     
-    // Get currently taken slots (2-5)
-    const takenSlots = new Set();
-    
-    // First add slots from existing remote users
-    remoteUsers.forEach(u => {
-      const container = document.querySelector(`[data-user="${u.uid}"]`);
-      if (container) {
-        const slotMatch = container.id.match(/video-slot-(\d+)/);
-        if (slotMatch) {
-          takenSlots.add(parseInt(slotMatch[1]));
-        }
-      }
-    });
-    
-    // Find first available slot from 2-5
-    for (let slot = 2; slot <= 5; slot++) {
-      if (!takenSlots.has(slot)) {
-        console.log(`[AGORA] Assigning remote user ${uid} to slot ${slot}`);
-        return `video-slot-${slot}`;
-      }
+    if (participantIndex >= 0 && participantIndex < 4) { // Max 4 remote users (slots 2-5)
+      const slotNumber = participantIndex + 2; // +2 because remote slots start at 2
+      console.log(`[AGORA] Assigning remote user ${uid} to slot ${slotNumber} (participant index: ${participantIndex})`);
+      return `video-slot-${slotNumber}`;
     }
-    
-    console.log(`[AGORA] No available slots for user ${uid} (max capacity reached)`);
+
+    console.log(`[AGORA] No slot available for user ${uid} (max capacity reached)`);
     return null;
   };
 
@@ -84,7 +72,10 @@ export function useAgoraRoom(roomId: string, userId: string) {
       }
 
       try {
-        container.innerHTML = ''; // Clear existing content
+        // Clear any existing content and data
+        container.innerHTML = '';
+        
+        // Play the video track
         await videoTrack.play(container);
         console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${uid}`);
       } catch (err) {
