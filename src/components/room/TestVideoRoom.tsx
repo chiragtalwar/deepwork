@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAgoraRoom } from '../../hooks/useAgoraRoom';
 import { useRoomPresence } from '../../hooks/useRoomPresence';
 import { FocusProgress } from './FocusProgress';
+import { supabase } from '../../lib/supabase';
 
 // Room ID - would come from your room management system
 const TEST_ROOM_UUID = '123e4567-e89b-12d3-a456-426614174000';
@@ -50,9 +51,68 @@ export function TestVideoRoom() {
     updateCurrentTask
   } = useRoomPresence(TEST_ROOM_UUID, user?.id || '');
 
+  // Add cleanup effect
+  useEffect(() => {
+    return () => {
+      // Clean up video tracks
+      if (videoTrack) {
+        videoTrack.stop();
+        videoTrack.close();
+      }
+      if (audioTrack) {
+        audioTrack.stop();
+        audioTrack.close();
+      }
+
+      // Leave Agora channel
+      if (client && client.connectionState === 'CONNECTED') {
+        client.leave();
+      }
+
+      // Remove from room_participants
+      if (user?.id) {
+        supabase
+          .from('room_participants')
+          .delete()
+          .match({ room_id: TEST_ROOM_UUID, user_id: user.id })
+          .then(({ error }) => {
+            if (error) console.error('Error cleaning up room presence:', error);
+          });
+      }
+    };
+  }, [videoTrack, audioTrack, client, user?.id]);
+
   // Handle room exit
-  const handleLeaveRoom = () => {
-    navigate('/');
+  const handleLeaveRoom = async () => {
+    try {
+      // Clean up video tracks
+      if (videoTrack) {
+        videoTrack.stop();
+        videoTrack.close();
+      }
+      if (audioTrack) {
+        audioTrack.stop();
+        audioTrack.close();
+      }
+
+      // Leave Agora channel
+      if (client && client.connectionState === 'CONNECTED') {
+        await client.leave();
+      }
+
+      // Remove from room_participants
+      if (user?.id) {
+        await supabase
+          .from('room_participants')
+          .delete()
+          .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
+      }
+
+      navigate('/');
+    } catch (error) {
+      console.error('Error leaving room:', error);
+      navigate('/');
+    }
   };
 
   // Play local video when ref is available

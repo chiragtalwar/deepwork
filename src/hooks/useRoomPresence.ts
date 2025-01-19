@@ -127,17 +127,27 @@ export function useRoomPresence(roomId: string, userId: string) {
 
     // Cleanup
     return () => {
-      if (presenceChannel) {
-        presenceChannel.unsubscribe();
-      }
-      
-      // Remove user from room if actually leaving
-      if (!document.hidden) {
-        supabase
-          .from('room_participants')
-          .delete()
-          .match({ room_id: roomId, user_id: userId });
-      }
+      const cleanup = async () => {
+        if (presenceChannel) {
+          await presenceChannel.unsubscribe();
+        }
+        
+        try {
+          // Always attempt to remove the user from room
+          const { error } = await supabase
+            .from('room_participants')
+            .delete()
+            .match({ room_id: roomId, user_id: userId });
+            
+          if (error) {
+            console.error('Failed to cleanup room presence:', error);
+          }
+        } catch (err) {
+          console.error('Error during room presence cleanup:', err);
+        }
+      };
+
+      cleanup();
     };
   }, [roomId, userId]);
 
