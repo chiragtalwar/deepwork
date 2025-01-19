@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAgoraRoom } from '../../hooks/useAgoraRoom';
 import { useRoomPresence } from '../../hooks/useRoomPresence';
 import { FocusProgress } from './FocusProgress';
+import { supabase } from '../../lib/supabase';
 
 // Room ID - would come from your room management system
 const TEST_ROOM_UUID = '123e4567-e89b-12d3-a456-426614174000';
@@ -51,8 +52,21 @@ export function TestVideoRoom() {
   } = useRoomPresence(TEST_ROOM_UUID, user?.id || '');
 
   // Handle room exit
-  const handleLeaveRoom = () => {
-    navigate('/');
+  const handleLeaveRoom = async () => {
+    try {
+      // Remove user from room participants
+      await supabase
+        .from('room_participants')
+        .delete()
+        .match({ room_id: TEST_ROOM_UUID, user_id: user?.id });
+        
+      // Then navigate away
+      navigate('/');
+    } catch (error) {
+      console.error('Error leaving room:', error);
+      // Still navigate away even if cleanup fails
+      navigate('/');
+    }
   };
 
   // Play local video when ref is available
