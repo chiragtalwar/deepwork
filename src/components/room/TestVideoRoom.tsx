@@ -214,172 +214,101 @@ export function TestVideoRoom() {
           {/* Main Grid */}
           <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
-              {/* Current User Card - Only show local video here */}
-              <div className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-                <div className="aspect-video bg-black/40 relative">
-                  <div ref={localVideoRef} className="absolute inset-0" />
-                  {!videoTrack && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <div className="flex flex-col items-center">
-                        <Icons.video className="w-6 h-6 text-white/40 mb-2" />
-                        <p className="text-white/80 text-sm">Camera not available</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="p-4">
-                  {/* Profile Header */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
-                      <span className="text-sky-300 font-medium">
-                        {user && profiles[user.id]?.full_name?.[0] || 'Y'}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-white font-medium truncate">
-                        {user && profiles[user.id]?.full_name || 'You'}
-                      </h3>
-                      <p className="text-sky-200/60 text-sm truncate">
-                        {user && profiles[user.id]?.title || 'Deep Focus Enthusiast'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Profile Info */}
-                  <div className="space-y-2.5">
-                    <div className="bg-black/20 rounded-lg p-3">
-                      <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
-                      <p className="text-white/90 text-sm line-clamp-2">
-                        {user && profiles[user.id]?.bio || 'No bio added yet'}
-                      </p>
-                    </div>
-
-                    <div className="bg-black/20 rounded-lg p-3">
-                      <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
-                      <p className="text-white/90 text-sm">
-                        {user && profiles[user.id]?.deep_work_sessions || '0'} sessions completed
-                      </p>
-                    </div>
-
-                    {/* Editable Focus Area */}
-                    <div className="bg-black/20 rounded-lg p-3">
-                      <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
-                      <input
-                        type="text"
-                        value={currentFocusTask}
-                        onChange={(e) => setCurrentFocusTask(e.target.value)}
-                        onBlur={() => updateCurrentTask(currentFocusTask)}
-                        placeholder="What are you working on?"
-                        className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-sky-500/50 rounded px-1 py-0.5"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Remote Participants - Only show other users here */}
-              {participants
-                .filter(p => p.user_id !== user?.id) // Filter out current user
-                .slice(0, 4)
-                .map(participant => {
-                  const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
-                  const profile = profiles[participant.user_id];
-                  
-                  return (
-                    <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-                      <div className="aspect-video bg-black/40 relative">
+              {/* Show ALL participants including current user */}
+              {participants.slice(0, 5).map(participant => {
+                const isCurrentUser = participant.user_id === user?.id;
+                const profile = profiles[participant.user_id];
+                
+                return (
+                  <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
+                    <div className="aspect-video bg-black/40 relative">
+                      {isCurrentUser ? (
+                        // Local video
+                        <div ref={localVideoRef} className="absolute inset-0" />
+                      ) : (
+                        // Remote video
                         <div 
                           ref={el => {
                             videoContainersRef.current[participant.user_id] = el;
+                            const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
                             if (el && remoteUser?.videoTrack) {
                               remoteUser.videoTrack.play(el);
                             }
                           }}
                           className="absolute inset-0" 
                         />
-                        {!remoteUser?.videoTrack && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                            <div className="flex flex-col items-center">
-                              <Icons.video className="w-6 h-6 text-white/40 mb-2" />
-                              <p className="text-white/80 text-sm">Camera not available</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        {/* Profile Header */}
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
-                            <span className="text-sky-300 font-medium">
-                              {profile?.full_name?.[0] || 'P'}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-white font-medium truncate">
-                              {profile?.full_name || `Participant ${participant.user_id.slice(0, 8)}`}
-                            </h3>
-                            <p className="text-sky-200/60 text-sm truncate">
-                              {profile?.title || 'Deep Focus Enthusiast'}
-                            </p>
+                      )}
+                      {/* Show camera not available message if no video */}
+                      {(!videoTrack && isCurrentUser) || (!remoteUsers.find(u => u.uid === participant.user_id)?.videoTrack && !isCurrentUser) ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <div className="flex flex-col items-center">
+                            <Icons.video className="w-6 h-6 text-white/40 mb-2" />
+                            <p className="text-white/80 text-sm">Camera not available</p>
                           </div>
                         </div>
+                      ) : null}
+                    </div>
+                    <div className="p-4">
+                      {/* Profile Header */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                          <span className="text-sky-300 font-medium">
+                            {profile?.full_name?.[0] || 'P'}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-white font-medium truncate">
+                            {profile?.full_name || `Participant ${participant.user_id.slice(0, 8)}`}
+                            {isCurrentUser && ' (You)'}
+                          </h3>
+                          <p className="text-sky-200/60 text-sm truncate">
+                            {profile?.title || 'Deep Focus Enthusiast'}
+                          </p>
+                        </div>
+                      </div>
 
-                        {/* Profile Info */}
-                        <div className="space-y-2.5">
+                      {/* Profile Info */}
+                      <div className="space-y-2.5">
+                        <div className="bg-black/20 rounded-lg p-3">
+                          <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
+                          <p className="text-white/90 text-sm line-clamp-2">
+                            {profile?.bio || 'No bio added yet'}
+                          </p>
+                        </div>
+
+                        <div className="bg-black/20 rounded-lg p-3">
+                          <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
+                          <p className="text-white/90 text-sm">
+                            {profile?.deep_work_sessions || '0'} sessions completed
+                          </p>
+                        </div>
+
+                        {/* Show editable focus area only for current user */}
+                        {isCurrentUser ? (
                           <div className="bg-black/20 rounded-lg p-3">
-                            <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
-                            <p className="text-white/90 text-sm line-clamp-2">
-                              {profile?.bio || 'No bio added yet'}
-                            </p>
+                            <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                            <input
+                              type="text"
+                              value={currentFocusTask}
+                              onChange={(e) => setCurrentFocusTask(e.target.value)}
+                              onBlur={() => updateCurrentTask(currentFocusTask)}
+                              placeholder="What are you working on?"
+                              className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-sky-500/50 rounded px-1 py-0.5"
+                            />
                           </div>
-
-                          <div className="bg-black/20 rounded-lg p-3">
-                            <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
-                            <p className="text-white/90 text-sm">
-                              {profile?.deep_work_sessions || '0'} sessions completed
-                            </p>
-                          </div>
-
+                        ) : (
                           <div className="bg-black/20 rounded-lg p-3">
                             <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
                             <p className="text-white/90 text-sm">
                               {participant.current_focus_task || 'Not specified'}
                             </p>
                           </div>
-                        </div>
+                        )}
                       </div>
-                    </div>
-                  );
-                })}
-
-              {/* Empty Slots */}
-              {Array.from({ length: Math.max(0, 4 - (participants.filter(p => {
-                const remoteUser = remoteUsers.find(u => u.uid === p.user_id);
-                return p.user_id !== user?.id && remoteUser;
-              }).length)) }).map((_, i) => (
-                <div key={`empty-${i}`} className="group bg-white/5 backdrop-blur-md rounded-xl overflow-hidden border border-white/5 shadow-lg">
-                  <div className="aspect-video bg-black/20 flex items-center justify-center">
-                    <div className="flex flex-col items-center">
-                      <Icons.users className="w-8 h-8 text-white/20 mb-2" />
-                      <p className="text-white/40 text-sm">Empty Seat</p>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center border border-white/10">
-                        <Icons.user className="w-5 h-5 text-white/20" />
-                      </div>
-                      <div>
-                        <h3 className="text-white/40 font-medium">Available Spot</h3>
-                        <p className="text-white/30 text-sm">Waiting for participant...</p>
-                      </div>
-                    </div>
-                    <div className="bg-black/10 rounded-lg p-3">
-                      <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
-                    </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
             </div>
           </div>
 

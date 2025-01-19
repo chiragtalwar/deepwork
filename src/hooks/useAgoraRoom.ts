@@ -83,81 +83,6 @@ export function useAgoraRoom(roomId: string, userId: string) {
     }
   };
 
-  // Handle remote users
-  useEffect(() => {
-    if (!client.current) return;
-
-    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      try {
-        console.log(`Remote user ${user.uid} published ${mediaType} track`);
-        
-        // Subscribe to the remote user
-        await client.current.subscribe(user, mediaType);
-        console.log(`Subscribed to ${mediaType} track of user ${user.uid}`);
-        
-        // Update remote users list
-        setRemoteUsers(prev => {
-          // If user exists, update their tracks
-          const exists = prev.find(u => u.uid === user.uid);
-          if (exists) {
-            return prev.map(u => u.uid === user.uid ? user : u);
-          }
-          // If user doesn't exist, add them
-          return [...prev, user];
-        });
-
-        // Play audio track immediately
-        if (mediaType === 'audio' && user.audioTrack) {
-          user.audioTrack.play();
-          console.log(`Playing audio track of user ${user.uid}`);
-        }
-
-        // Video track will be played by the component when the ref is ready
-      } catch (error) {
-        console.error(`Failed to handle remote user ${user.uid} published:`, error);
-      }
-    };
-
-    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
-      console.log(`Remote user ${user.uid} unpublished ${mediaType} track`);
-      
-      if (mediaType === 'video' && user.videoTrack) {
-        user.videoTrack.stop();
-      }
-      if (mediaType === 'audio' && user.audioTrack) {
-        user.audioTrack.stop();
-      }
-
-      // Update remote users list to reflect the unpublished track
-      setRemoteUsers(prev => 
-        prev.map(u => u.uid === user.uid ? user : u)
-      );
-    };
-
-    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
-      console.log(`Remote user ${user.uid} left the channel`);
-      
-      // Stop all tracks from this user
-      if (user.videoTrack) user.videoTrack.stop();
-      if (user.audioTrack) user.audioTrack.stop();
-      
-      // Remove user from the list
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    };
-
-    // Set up event handlers
-    client.current.on('user-published', handleUserPublished);
-    client.current.on('user-unpublished', handleUserUnpublished);
-    client.current.on('user-left', handleUserLeft);
-
-    // Cleanup
-    return () => {
-      client.current.off('user-published', handleUserPublished);
-      client.current.off('user-unpublished', handleUserUnpublished);
-      client.current.off('user-left', handleUserLeft);
-    };
-  }, []);
-
   // Initialize room connection
   useEffect(() => {
     if (!userId || isInitializedRef.current) return;
@@ -172,6 +97,23 @@ export function useAgoraRoom(roomId: string, userId: string) {
           userId
         );
 
+        // Get existing users in the channel
+        const users = client.current.remoteUsers;
+        console.log('Existing users in channel:', users);
+
+        // Subscribe to all existing users
+        for (const user of users) {
+          await client.current.subscribe(user, 'video');
+          await client.current.subscribe(user, 'audio');
+          
+          setRemoteUsers(prev => {
+            if (!prev.some(u => u.uid === user.uid)) {
+              return [...prev, user];
+            }
+            return prev;
+          });
+        }
+
         // Initialize and publish tracks
         const { videoTrack, audioTrack } = await initializeTracks();
         await client.current.publish([videoTrack, audioTrack]);
@@ -184,17 +126,73 @@ export function useAgoraRoom(roomId: string, userId: string) {
       }
     };
 
+    // Set up event handlers
+    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      try {
+        console.log(`Remote user ${user.uid} published ${mediaType} track`);
+        
+        // Subscribe to the remote user
+        await client.current.subscribe(user, mediaType);
+        console.log(`Subscribed to ${mediaType} track of user ${user.uid}`);
+        
+        // Update remote users list immediately
+        setRemoteUsers(prev => {
+          const exists = prev.find(u => u.uid === user.uid);
+          if (exists) {
+            return prev.map(u => u.uid === user.uid ? user : u);
+          }
+          return [...prev, user];
+        });
+
+        // Play audio track immediately
+        if (mediaType === 'audio' && user.audioTrack) {
+          user.audioTrack.play();
+        }
+      } catch (error) {
+        console.error(`Failed to handle remote user ${user.uid} published:`, error);
+      }
+    };
+
+    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      console.log(`Remote user ${user.uid} unpublished ${mediaType} track`);
+      
+      if (mediaType === 'video' && user.videoTrack) {
+        user.videoTrack.stop();
+      }
+      if (mediaType === 'audio' && user.audioTrack) {
+        user.audioTrack.stop();
+      }
+    };
+
+    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      console.log(`Remote user ${user.uid} left the channel`);
+      
+      // Stop all tracks from this user
+      if (user.videoTrack) user.videoTrack.stop();
+      if (user.audioTrack) user.audioTrack.stop();
+      
+      // Remove user from the list immediately
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    };
+
+    // Set up event handlers
+    client.current.on('user-published', handleUserPublished);
+    client.current.on('user-unpublished', handleUserUnpublished);
+    client.current.on('user-left', handleUserLeft);
+
     // Handle visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Initialize
     initialize();
 
-    // Cleanup only when truly leaving
+    // Cleanup
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      client.current.off('user-published', handleUserPublished);
+      client.current.off('user-unpublished', handleUserUnpublished);
+      client.current.off('user-left', handleUserLeft);
       
-      // Only cleanup if we're actually leaving the page
       if (!document.hidden) {
         cleanup();
       }
