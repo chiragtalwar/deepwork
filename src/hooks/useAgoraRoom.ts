@@ -17,6 +17,12 @@ export function useAgoraRoom(roomId: string, userId: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Helper to find a user's slot
+  const findUserSlot = (uid: string | number) => {
+    const slotEl = document.querySelector(`[data-user-id="${uid}"]`);
+    return slotEl ? slotEl.id : null;
+  };
+
   useEffect(() => {
     if (!userId || !roomId) return;
 
@@ -42,13 +48,29 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
+            // Play audio immediately
             if (mediaType === "audio" && user.audioTrack) {
-              // Play audio immediately
               user.audioTrack.play();
               console.log(`[AGORA] Playing audio for ${user.uid}`);
             }
 
-            // Update remote users state to trigger UI update
+            // For video, find the correct slot and play
+            if (mediaType === "video" && user.videoTrack) {
+              const slotId = findUserSlot(user.uid);
+              if (slotId) {
+                const container = document.getElementById(slotId);
+                if (container) {
+                  user.videoTrack.play(container);
+                  console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
+                } else {
+                  console.error(`[AGORA] Slot ${slotId} container not found for ${user.uid}`);
+                }
+              } else {
+                console.error(`[AGORA] No slot found for user ${user.uid}`);
+              }
+            }
+
+            // Update remote users state
             setRemoteUsers(prev => {
               if (prev.find(u => u.uid === user.uid)) {
                 return prev.map(u => u.uid === user.uid ? user : u);
@@ -65,10 +87,17 @@ export function useAgoraRoom(roomId: string, userId: string) {
           if (mediaType === "audio") {
             user.audioTrack?.stop();
           }
+          if (mediaType === "video") {
+            user.videoTrack?.stop();
+          }
         });
 
         client.current.on("user-left", (user) => {
           console.log(`[AGORA] User ${user.uid} left`);
+          // Stop their tracks
+          user.audioTrack?.stop();
+          user.videoTrack?.stop();
+          // Update state
           setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
         });
 

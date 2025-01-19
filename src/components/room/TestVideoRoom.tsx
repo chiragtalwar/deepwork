@@ -51,6 +51,18 @@ export function TestVideoRoom() {
     updateCurrentTask
   } = useRoomPresence(TEST_ROOM_UUID, user?.id || '');
 
+  // Create fixed array of 5 slots
+  const VIDEO_SLOTS = Array.from({ length: 5 }).map((_, index) => ({
+    id: `video-slot-${index + 1}`,
+    index: index + 1
+  }));
+
+  // Find user's assigned slot
+  const getUserSlot = (userId: string) => {
+    const participantIndex = participants.findIndex(p => p.user_id === userId);
+    return participantIndex + 1; // 1-based slot numbers
+  };
+
   // Handle room exit
   const handleLeaveRoom = async () => {
     try {
@@ -167,7 +179,7 @@ export function TestVideoRoom() {
     });
   }, [remoteUsers]);
 
-  // Render the room UI
+  // Main Grid rendering
   return (
     <div className="fixed inset-0 z-50">
       <div 
@@ -239,106 +251,111 @@ export function TestVideoRoom() {
             </div>
           </div>
 
-          {/* Main Grid */}
+          {/* Video Grid */}
           <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
-              {/* Pre-create all 5 video slots */}
-              {Array.from({ length: 5 }).map((_, index) => {
-                const participant = participants[index];
-                if (!participant) {
-                  // Empty slot
-                  return (
-                    <div key={`empty-${index}`} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-                      <div className="aspect-video bg-black/40 relative">
+              {VIDEO_SLOTS.map((slot) => {
+                // Find participant for this slot (if any)
+                const participant = participants[slot.index - 1];
+                const isCurrentUser = participant?.user_id === user?.id;
+                const profile = participant ? profiles[participant.user_id] : null;
+                const remoteUser = participant ? remoteUsers.find(u => u.uid === participant.user_id) : null;
+
+                return (
+                  <div key={slot.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
+                    <div className="aspect-video bg-black/40 relative">
+                      {/* Video Container - Always Present */}
+                      <div 
+                        id={slot.id}
+                        data-slot={slot.index}
+                        data-user-id={participant?.user_id}
+                        className="absolute inset-0"
+                        ref={el => {
+                          // Set up local video reference
+                          if (isCurrentUser && el) {
+                            if (videoTrack) {
+                              console.log(`[UI] Playing local video in slot ${slot.index}`);
+                              videoTrack.play(el);
+                            }
+                          }
+                          // For remote videos, the container is already available
+                          // useAgoraRoom will handle playing remote videos
+                        }}
+                      />
+
+                      {/* Empty Slot Overlay */}
+                      {!participant && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                           <div className="flex flex-col items-center">
                             <Icons.users className="w-6 h-6 text-white/40 mb-2" />
-                            <p className="text-white/80 text-sm">Waiting for participant</p>
+                            <p className="text-white/80 text-sm">Slot {slot.index} Available</p>
                           </div>
                         </div>
-                      </div>
-                      <div className="p-4">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
-                            <span className="text-sky-300 font-medium">?</span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-white font-medium truncate">Empty Slot</h3>
-                            <p className="text-sky-200/60 text-sm truncate">Waiting for someone to join</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const isCurrentUser = participant.user_id === user?.id;
-                const profile = profiles[participant.user_id];
-                const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
-                
-                return (
-                  <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-                    <div className="aspect-video bg-black/40 relative">
-                      {isCurrentUser ? (
-                        // Local video container
-                        <div ref={localVideoRef} className="absolute inset-0" />
-                      ) : (
-                        // Remote video container
-                        <div 
-                          data-user-video={participant.user_id}
-                          className="absolute inset-0" 
-                        />
                       )}
-                      
-                      {/* Show camera not available message */}
-                      {(!videoTrack && isCurrentUser) || (!remoteUser?.videoTrack && !isCurrentUser) ? (
+
+                      {/* Camera Not Available Overlay */}
+                      {participant && ((!videoTrack && isCurrentUser) || (!remoteUser?.videoTrack && !isCurrentUser)) && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                           <div className="flex flex-col items-center">
                             <Icons.video className="w-6 h-6 text-white/40 mb-2" />
                             <p className="text-white/80 text-sm">Camera not available</p>
                           </div>
                         </div>
-                      ) : null}
+                      )}
                     </div>
 
-                    {/* Rest of the participant card content */}
+                    {/* Participant Info Card */}
                     <div className="p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
-                          <span className="text-sky-300 font-medium">
-                            {profile?.full_name?.[0] || 'P'}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-white font-medium truncate">
-                            {profile?.full_name || `Participant ${participant.user_id.slice(0, 8)}`}
-                            {isCurrentUser && ' (You)'}
-                          </h3>
-                          <p className="text-sky-200/60 text-sm truncate">
-                            {profile?.title || 'Deep Focus Enthusiast'}
-                          </p>
-                        </div>
-                      </div>
+                      {participant ? (
+                        <>
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                              <span className="text-sky-300 font-medium">
+                                {profile?.full_name?.[0] || 'P'}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-white font-medium truncate">
+                                {profile?.full_name || `Participant ${participant.user_id.slice(0, 8)}`}
+                                {isCurrentUser && ' (You)'}
+                              </h3>
+                              <p className="text-sky-200/60 text-sm truncate">
+                                Slot {slot.index}
+                              </p>
+                            </div>
+                          </div>
 
-                      <div className="space-y-2.5">
-                        <div className="bg-black/20 rounded-lg p-3">
-                          <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
-                          {isCurrentUser ? (
-                            <input
-                              type="text"
-                              value={currentFocusTask}
-                              onChange={(e) => setCurrentFocusTask(e.target.value)}
-                              onBlur={() => updateCurrentTask(currentFocusTask)}
-                              placeholder="What are you working on?"
-                              className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-sky-500/50 rounded px-1 py-0.5"
-                            />
-                          ) : (
-                            <p className="text-white/90 text-sm">
-                              {participant.current_focus_task || 'Not specified'}
-                            </p>
-                          )}
+                          <div className="space-y-2.5">
+                            <div className="bg-black/20 rounded-lg p-3">
+                              <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                              {isCurrentUser ? (
+                                <input
+                                  type="text"
+                                  value={currentFocusTask}
+                                  onChange={(e) => setCurrentFocusTask(e.target.value)}
+                                  onBlur={() => updateCurrentTask(currentFocusTask)}
+                                  placeholder="What are you working on?"
+                                  className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-sky-500/50 rounded px-1 py-0.5"
+                                />
+                              ) : (
+                                <p className="text-white/90 text-sm">
+                                  {participant.current_focus_task || 'Not specified'}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                            <span className="text-sky-300 font-medium">?</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-white font-medium truncate">Empty Slot</h3>
+                            <p className="text-sky-200/60 text-sm truncate">Waiting for participant</p>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 );
