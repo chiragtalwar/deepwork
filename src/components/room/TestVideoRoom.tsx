@@ -214,8 +214,36 @@ export function TestVideoRoom() {
           {/* Main Grid */}
           <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
-              {/* Show ALL participants including current user */}
-              {participants.slice(0, 5).map(participant => {
+              {/* Pre-create all 5 video slots */}
+              {Array.from({ length: 5 }).map((_, index) => {
+                const participant = participants[index];
+                if (!participant) {
+                  // Empty slot
+                  return (
+                    <div key={`empty-${index}`} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
+                      <div className="aspect-video bg-black/40 relative">
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <div className="flex flex-col items-center">
+                            <Icons.users className="w-6 h-6 text-white/40 mb-2" />
+                            <p className="text-white/80 text-sm">Waiting for participant</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
+                            <span className="text-sky-300 font-medium">?</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-white font-medium truncate">Empty Slot</h3>
+                            <p className="text-sky-200/60 text-sm truncate">Waiting for someone to join</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const isCurrentUser = participant.user_id === user?.id;
                 const profile = profiles[participant.user_id];
                 const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
@@ -224,10 +252,10 @@ export function TestVideoRoom() {
                   <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                     <div className="aspect-video bg-black/40 relative">
                       {isCurrentUser ? (
-                        // Local video
+                        // Local video container - always ready
                         <div ref={localVideoRef} className="absolute inset-0" />
                       ) : (
-                        // Remote video - Create container immediately
+                        // Remote video container - always ready with user ID
                         <div 
                           data-user-video={participant.user_id}
                           ref={el => {
@@ -235,7 +263,7 @@ export function TestVideoRoom() {
                               videoContainersRef.current[participant.user_id] = el;
                               // Try to play video if we already have the track
                               if (remoteUser?.videoTrack) {
-                                console.log(`[UI] Playing existing video track for ${participant.user_id}`);
+                                console.log(`[UI] Playing video track for ${participant.user_id}`);
                                 remoteUser.videoTrack.play(el);
                               }
                             }
@@ -254,8 +282,9 @@ export function TestVideoRoom() {
                         </div>
                       ) : null}
                     </div>
+
+                    {/* Rest of the participant card content */}
                     <div className="p-4">
-                      {/* Profile Header */}
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-10 h-10 rounded-full bg-sky-500/20 backdrop-blur-sm flex items-center justify-center border border-sky-500/20">
                           <span className="text-sky-300 font-medium">
@@ -273,26 +302,10 @@ export function TestVideoRoom() {
                         </div>
                       </div>
 
-                      {/* Profile Info */}
                       <div className="space-y-2.5">
                         <div className="bg-black/20 rounded-lg p-3">
-                          <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
-                          <p className="text-white/90 text-sm line-clamp-2">
-                            {profile?.bio || 'No bio added yet'}
-                          </p>
-                        </div>
-
-                        <div className="bg-black/20 rounded-lg p-3">
-                          <p className="text-white/60 text-xs font-medium mb-1">Deep Work Sessions</p>
-                          <p className="text-white/90 text-sm">
-                            {profile?.deep_work_sessions || '0'} sessions completed
-                          </p>
-                        </div>
-
-                        {/* Show editable focus area only for current user */}
-                        {isCurrentUser ? (
-                          <div className="bg-black/20 rounded-lg p-3">
-                            <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                          <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                          {isCurrentUser ? (
                             <input
                               type="text"
                               value={currentFocusTask}
@@ -301,15 +314,12 @@ export function TestVideoRoom() {
                               placeholder="What are you working on?"
                               className="w-full bg-transparent text-white/90 text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-sky-500/50 rounded px-1 py-0.5"
                             />
-                          </div>
-                        ) : (
-                          <div className="bg-black/20 rounded-lg p-3">
-                            <p className="text-white/60 text-xs font-medium mb-1">Currently Working On</p>
+                          ) : (
                             <p className="text-white/90 text-sm">
                               {participant.current_focus_task || 'Not specified'}
                             </p>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
