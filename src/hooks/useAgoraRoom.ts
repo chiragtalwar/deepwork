@@ -89,6 +89,8 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
     const initialize = async () => {
       try {
+        console.log('[AGORA] Initializing with userId:', userId);
+        
         // Join the channel
         await client.current.join(
           import.meta.env.VITE_AGORA_APP_ID!,
@@ -96,35 +98,42 @@ export function useAgoraRoom(roomId: string, userId: string) {
           null,
           userId
         );
-
         console.log('[AGORA] Successfully joined channel:', roomId);
 
         // Get existing users in the channel
         const users = client.current.remoteUsers;
         console.log('[AGORA] Found existing users:', users);
 
-        // Update remote users state with existing users
-        if (users.length > 0) {
-          setRemoteUsers(users);
-          
-          // Subscribe to existing users' tracks
-          for (const user of users) {
-            if (user.hasVideo) {
-              await client.current.subscribe(user, 'video');
-              console.log(`[AGORA] Subscribed to existing user's video: ${user.uid}`);
-            }
-            if (user.hasAudio) {
-              await client.current.subscribe(user, 'audio');
-              user.audioTrack?.play();
-              console.log(`[AGORA] Subscribed to existing user's audio: ${user.uid}`);
-            }
-          }
-        }
-
-        // Initialize and publish local tracks
+        // Initialize and publish local tracks first
         const { videoTrack, audioTrack } = await initializeTracks();
         await client.current.publish([videoTrack, audioTrack]);
         console.log('[AGORA] Published local tracks');
+
+        // Update remote users state and subscribe to their tracks
+        if (users.length > 0) {
+          console.log('[AGORA] Subscribing to existing users:', users);
+          
+          // Subscribe to all existing users first
+          for (const user of users) {
+            try {
+              if (user.hasVideo) {
+                await client.current.subscribe(user, 'video');
+                console.log(`[AGORA] Subscribed to video track of user ${user.uid}`);
+              }
+              if (user.hasAudio) {
+                await client.current.subscribe(user, 'audio');
+                user.audioTrack?.play();
+                console.log(`[AGORA] Subscribed to audio track of user ${user.uid}`);
+              }
+            } catch (error) {
+              console.error(`[AGORA] Failed to subscribe to user ${user.uid}:`, error);
+            }
+          }
+
+          // Update remote users state after subscribing
+          setRemoteUsers(users);
+          console.log('[AGORA] Updated remote users state:', users);
+        }
 
         isInitializedRef.current = true;
         setIsConnected(true);
@@ -161,33 +170,16 @@ export function useAgoraRoom(roomId: string, userId: string) {
           console.log(`[AGORA] Playing audio for user ${user.uid}`);
         }
 
-        // Handle video track with retry mechanism
+        // Handle video track
         if (mediaType === 'video' && user.videoTrack) {
-          const maxAttempts = 50;
-          const interval = 100;
-          let attempts = 0;
-
-          const tryPlayVideo = () => {
-            const container = document.querySelector(`[data-user-video="${user.uid}"]`);
-            if (container) {
-              console.log(`[AGORA] Found video container for ${user.uid}, playing video`);
-              user.videoTrack?.play(container as HTMLElement);
-              return true;
-            }
-            
-            attempts++;
-            console.log(`[AGORA] Attempt ${attempts}/${maxAttempts} to find container for ${user.uid}`);
-            
-            if (attempts < maxAttempts) {
-              setTimeout(tryPlayVideo, interval);
-            } else {
-              console.error(`[AGORA] Failed to find video container for ${user.uid} after ${maxAttempts} attempts`);
-            }
-            return false;
-          };
-
-          // Start trying to play video
-          tryPlayVideo();
+          console.log(`[AGORA] Attempting to play video for user ${user.uid}`);
+          const container = document.querySelector(`[data-user-video="${user.uid}"]`);
+          if (container) {
+            user.videoTrack.play(container as HTMLElement);
+            console.log(`[AGORA] Successfully played video for user ${user.uid}`);
+          } else {
+            console.error(`[AGORA] Could not find video container for user ${user.uid}`);
+          }
         }
       } catch (error) {
         console.error(`[AGORA] Error handling user published event:`, error);
