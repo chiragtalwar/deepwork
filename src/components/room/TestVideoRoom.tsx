@@ -64,21 +64,75 @@ export function TestVideoRoom() {
         audioTrack.close();
       }
 
+      // Leave Agora channel
+      if (client && client.connectionState === 'CONNECTED') {
+        await client.leave();
+      }
+
       // Remove from room_participants
       if (user?.id) {
-        await supabase
+        const { error } = await supabase
           .from('room_participants')
           .delete()
           .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
+        
+        if (error) {
+          console.error('Error removing participant:', error);
+        }
       }
 
       // Finally navigate
       navigate('/');
     } catch (error) {
       console.error('Error leaving room:', error);
+      // Even if there's an error, try to navigate away
       navigate('/');
     }
   };
+
+  // Add cleanup on unmount
+  useEffect(() => {
+    // Cleanup function
+    return () => {
+      if (user?.id) {
+        // Remove from room_participants when component unmounts
+        supabase
+          .from('room_participants')
+          .delete()
+          .match({ room_id: TEST_ROOM_UUID, user_id: user.id })
+          .then(({ error }) => {
+            if (error) {
+              console.error('Error removing participant on unmount:', error);
+            }
+          });
+      }
+    };
+  }, [user?.id]);
+
+  // Handle beforeunload event
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (user?.id) {
+        // Sync call for beforeunload
+        const cleanup = async () => {
+          try {
+            await supabase
+              .from('room_participants')
+              .delete()
+              .match({ room_id: TEST_ROOM_UUID, user_id: user.id });
+          } catch (error) {
+            console.error('Error cleaning up on page unload:', error);
+          }
+        };
+        cleanup();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [user?.id]);
 
   // Play local video when ref is available
   if (localVideoRef.current && videoTrack) {

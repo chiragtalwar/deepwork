@@ -83,6 +83,59 @@ export function useAgoraRoom(roomId: string, userId: string) {
     }
   };
 
+  // Handle remote users
+  useEffect(() => {
+    if (!client.current) return;
+
+    const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      try {
+        // Subscribe to the remote user
+        await client.current.subscribe(user, mediaType);
+        
+        // Update remote users list
+        setRemoteUsers(prev => {
+          const exists = prev.find(u => u.uid === user.uid);
+          if (!exists) {
+            return [...prev, user];
+          }
+          return prev.map(u => u.uid === user.uid ? user : u);
+        });
+
+        // Play the track
+        if (mediaType === 'audio' && user.audioTrack) {
+          user.audioTrack.play();
+        }
+      } catch (error) {
+        console.error('Failed to handle remote user published:', error);
+      }
+    };
+
+    const handleUserUnpublished = (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+      if (mediaType === 'video' && user.videoTrack) {
+        user.videoTrack.stop();
+      }
+      if (mediaType === 'audio' && user.audioTrack) {
+        user.audioTrack.stop();
+      }
+    };
+
+    const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+    };
+
+    // Set up event handlers
+    client.current.on('user-published', handleUserPublished);
+    client.current.on('user-unpublished', handleUserUnpublished);
+    client.current.on('user-left', handleUserLeft);
+
+    // Cleanup
+    return () => {
+      client.current.off('user-published', handleUserPublished);
+      client.current.off('user-unpublished', handleUserUnpublished);
+      client.current.off('user-left', handleUserLeft);
+    };
+  }, []);
+
   // Initialize room connection
   useEffect(() => {
     if (!userId || isInitializedRef.current) return;
@@ -109,30 +162,6 @@ export function useAgoraRoom(roomId: string, userId: string) {
       }
     };
 
-    // Set up event listeners
-    client.current.on('user-published', async (user, mediaType) => {
-      await client.current.subscribe(user, mediaType);
-      
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => {
-          if (!prev.some(u => u.uid === user.uid)) {
-            return [...prev, user];
-          }
-          return prev;
-        });
-      }
-    });
-
-    client.current.on('user-unpublished', (user, mediaType) => {
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-      }
-    });
-
-    client.current.on('user-left', (user) => {
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    });
-
     // Handle visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -145,13 +174,38 @@ export function useAgoraRoom(roomId: string, userId: string) {
       
       // Only cleanup if we're actually leaving the page
       if (!document.hidden) {
-        client.current.leave();
-        videoTrackRef.current?.close();
-        audioTrackRef.current?.close();
-        isInitializedRef.current = false;
+        cleanup();
       }
     };
   }, [roomId, userId]);
+
+  // Cleanup function
+  const cleanup = async () => {
+    try {
+      // Stop and close local tracks
+      if (videoTrackRef.current) {
+        videoTrackRef.current.stop();
+        videoTrackRef.current.close();
+        videoTrackRef.current = null;
+      }
+      if (audioTrackRef.current) {
+        audioTrackRef.current.stop();
+        audioTrackRef.current.close();
+        audioTrackRef.current = null;
+      }
+
+      // Leave channel
+      if (client.current.connectionState === 'CONNECTED') {
+        await client.current.leave();
+      }
+
+      setRemoteUsers([]);
+      isInitializedRef.current = false;
+      setIsConnected(false);
+    } catch (error) {
+      console.error('Cleanup error:', error);
+    }
+  };
 
   return {
     client: client.current,
