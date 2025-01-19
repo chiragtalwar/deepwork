@@ -97,21 +97,24 @@ export function useAgoraRoom(roomId: string, userId: string) {
           userId
         );
 
-        // Get existing users in the channel
+        // Get existing users in the channel and subscribe to them immediately
         const users = client.current.remoteUsers;
         console.log('Existing users in channel:', users);
+        
+        // Update remote users state with existing users
+        setRemoteUsers(users);
 
-        // Subscribe to all existing users
+        // Subscribe to all existing users' tracks
         for (const user of users) {
-          await client.current.subscribe(user, 'video');
-          await client.current.subscribe(user, 'audio');
-          
-          setRemoteUsers(prev => {
-            if (!prev.some(u => u.uid === user.uid)) {
-              return [...prev, user];
-            }
-            return prev;
-          });
+          if (user.hasVideo) {
+            await client.current.subscribe(user, 'video');
+            console.log(`Subscribed to video track of existing user ${user.uid}`);
+          }
+          if (user.hasAudio) {
+            await client.current.subscribe(user, 'audio');
+            user.audioTrack?.play();
+            console.log(`Subscribed to audio track of existing user ${user.uid}`);
+          }
         }
 
         // Initialize and publish tracks
@@ -139,14 +142,17 @@ export function useAgoraRoom(roomId: string, userId: string) {
         setRemoteUsers(prev => {
           const exists = prev.find(u => u.uid === user.uid);
           if (exists) {
+            // Update existing user with new track info
             return prev.map(u => u.uid === user.uid ? user : u);
           }
+          // Add new user
           return [...prev, user];
         });
 
-        // Play audio track immediately
+        // Play audio track immediately if it's audio
         if (mediaType === 'audio' && user.audioTrack) {
           user.audioTrack.play();
+          console.log(`Playing audio track for user ${user.uid}`);
         }
       } catch (error) {
         console.error(`Failed to handle remote user ${user.uid} published:`, error);

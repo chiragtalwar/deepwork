@@ -68,20 +68,33 @@ export function useRoomPresence(roomId: string, userId: string) {
             table: 'room_participants',
             filter: `room_id=eq.${roomId}`
           }, async (payload) => {
+            console.log('Room participants change detected:', payload);
+            
             // Fetch all current participants
-            const { data: participants } = await supabase
+            const { data: participants, error: fetchError } = await supabase
               .from('room_participants')
               .select('*')
               .eq('room_id', roomId);
 
+            if (fetchError) {
+              console.error('Error fetching participants:', fetchError);
+              return;
+            }
+
             if (participants) {
+              console.log('Updated participants list:', participants);
               setParticipants(participants);
               
               // Fetch profiles for all participants
-              const { data: profiles } = await supabase
+              const { data: profiles, error: profileError } = await supabase
                 .from('profiles')
                 .select('*')
                 .in('id', participants.map(p => p.user_id));
+
+              if (profileError) {
+                console.error('Error fetching profiles:', profileError);
+                return;
+              }
 
               if (profiles) {
                 const profileMap = profiles.reduce((acc, profile) => {
@@ -89,25 +102,41 @@ export function useRoomPresence(roomId: string, userId: string) {
                   return acc;
                 }, {} as { [key: string]: Profile });
                 
+                console.log('Updated profiles map:', profileMap);
                 setProfiles(profileMap);
               }
             }
           })
-          .subscribe();
+          .subscribe((status) => {
+            console.log('Presence channel subscription status:', status);
+          });
 
-        // Initial fetch
-        const { data: initialParticipants } = await supabase
+        // Initial fetch with error handling
+        const { data: initialParticipants, error: initialError } = await supabase
           .from('room_participants')
           .select('*')
           .eq('room_id', roomId);
 
+        if (initialError) {
+          console.error('Error fetching initial participants:', initialError);
+          setError('Failed to fetch initial participants');
+          return;
+        }
+
         if (initialParticipants) {
+          console.log('Initial participants:', initialParticipants);
           setParticipants(initialParticipants);
           
-          const { data: initialProfiles } = await supabase
+          const { data: initialProfiles, error: profileError } = await supabase
             .from('profiles')
             .select('*')
             .in('id', initialParticipants.map(p => p.user_id));
+
+          if (profileError) {
+            console.error('Error fetching initial profiles:', profileError);
+            setError('Failed to fetch initial profiles');
+            return;
+          }
 
           if (initialProfiles) {
             const profileMap = initialProfiles.reduce((acc, profile) => {
@@ -115,6 +144,7 @@ export function useRoomPresence(roomId: string, userId: string) {
               return acc;
             }, {} as { [key: string]: Profile });
             
+            console.log('Initial profiles map:', profileMap);
             setProfiles(profileMap);
           }
         }
