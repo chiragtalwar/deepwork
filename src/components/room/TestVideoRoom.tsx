@@ -258,24 +258,6 @@ export function TestVideoRoom() {
                         // Remote video container - always ready with user ID
                         <div 
                           id={`video-${participant.user_id}`}
-                          data-user-video={participant.user_id}
-                          ref={el => {
-                            if (el) {
-                              console.log(`[UI] Setting up video container for ${participant.user_id}`);
-                              videoContainersRef.current[participant.user_id] = el;
-                              if (remoteUser?.videoTrack) {
-                                console.log(`[UI] Found existing video track for ${participant.user_id}, attempting to play`);
-                                try {
-                                  remoteUser.videoTrack.play(el);
-                                  console.log(`[UI] Successfully played existing video for ${participant.user_id}`);
-                                } catch (error) {
-                                  console.error(`[UI] Failed to play existing video for ${participant.user_id}:`, error);
-                                }
-                              } else {
-                                console.log(`[UI] No video track yet for ${participant.user_id}`);
-                              }
-                            }
-                          }}
                           className="absolute inset-0" 
                         />
                       )}

@@ -170,42 +170,27 @@ export function useAgoraRoom(roomId: string, userId: string) {
           console.log(`[AGORA] Playing audio for user ${user.uid}`);
         }
 
-        // Handle video track with retry
+        // Handle video track
         if (mediaType === 'video' && user.videoTrack) {
           console.log(`[AGORA] Starting video play attempts for user ${user.uid}`);
           
-          const playVideo = () => {
-            const maxAttempts = 20;
-            let attempts = 0;
-
-            const attemptPlay = () => {
-              if (attempts >= maxAttempts) {
-                console.error(`[AGORA] Failed to play video after ${maxAttempts} attempts for user ${user.uid}`);
-                return;
+          // Wait for a short delay to ensure React has rendered the container
+          setTimeout(() => {
+            const containerId = `video-${user.uid}`;
+            console.log(`[AGORA] Looking for container with ID: ${containerId}`);
+            
+            const container = document.getElementById(containerId);
+            if (container) {
+              try {
+                user.videoTrack?.play(container);
+                console.log(`[AGORA] Successfully played video in container: ${containerId}`);
+              } catch (error) {
+                console.error(`[AGORA] Error playing video in container ${containerId}:`, error);
               }
-
-              const container = document.querySelector(`[data-user-video="${user.uid}"]`);
-              if (container) {
-                try {
-                  user.videoTrack?.play(container as HTMLElement);
-                  console.log(`[AGORA] Successfully played video for user ${user.uid} on attempt ${attempts + 1}`);
-                } catch (error) {
-                  console.error(`[AGORA] Error playing video on attempt ${attempts + 1}:`, error);
-                }
-              } else {
-                console.log(`[AGORA] Container not found for user ${user.uid}, attempt ${attempts + 1}/${maxAttempts}`);
-                attempts++;
-                // Retry after a short delay
-                setTimeout(attemptPlay, 200);
-              }
-            };
-
-            // Start the first attempt
-            attemptPlay();
-          };
-
-          // Start trying to play video
-          playVideo();
+            } else {
+              console.error(`[AGORA] Container not found: ${containerId}`);
+            }
+          }, 500); // Wait for 500ms to ensure container exists
         }
       } catch (error) {
         console.error(`[AGORA] Error handling user published event:`, error);
