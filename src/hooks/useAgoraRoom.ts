@@ -19,11 +19,9 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
   // Helper to find a user's slot based on participant index
   const findUserSlot = (uid: string | number) => {
-    // Find the index of this user in remoteUsers array
-    const userIndex = remoteUsers.findIndex(u => u.uid === uid);
     // Remote users start from slot 2 (slot 1 is for local user)
-    const slotNumber = userIndex + 2;
-    return `video-slot-${slotNumber}`;
+    const userIndex = remoteUsers.findIndex(u => u.uid === uid);
+    return `video-slot-${userIndex + 2}`; // +2 because slot 1 is reserved for local user
   };
 
   useEffect(() => {
@@ -59,20 +57,27 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
             // Update remote users state FIRST
             setRemoteUsers(prev => {
-              if (prev.find(u => u.uid === user.uid)) {
-                return prev.map(u => u.uid === user.uid ? user : u);
+              const existingUserIndex = prev.findIndex(u => u.uid === user.uid);
+              if (existingUserIndex !== -1) {
+                // Update existing user
+                const updatedUsers = [...prev];
+                updatedUsers[existingUserIndex] = user;
+                return updatedUsers;
               }
+              // Add new user
               return [...prev, user];
             });
 
             // For video, find the correct slot and play
             if (mediaType === "video" && user.videoTrack) {
-              // Calculate slot based on user index
               const slotId = findUserSlot(user.uid);
               console.log(`[AGORA] Attempting to play video in slot ${slotId} for user ${user.uid}`);
 
+              // Stop any existing video in this slot first
               const container = document.getElementById(slotId);
               if (container) {
+                // Clear the container first
+                container.innerHTML = '';
                 try {
                   user.videoTrack.play(container);
                   console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${user.uid}`);

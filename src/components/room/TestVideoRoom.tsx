@@ -269,9 +269,11 @@ export function TestVideoRoom() {
                         id={slot.id}
                         className="absolute inset-0"
                         ref={el => {
-                          // Only handle local video (slot 1)
+                          // Only set up local video in slot 1 if this is the current user
                           if (slot.index === 1 && isCurrentUser && el && videoTrack) {
                             console.log(`[UI] Playing local video in slot 1`);
+                            // Clear the container first
+                            el.innerHTML = '';
                             videoTrack.play(el);
                           }
                         }}
