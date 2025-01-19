@@ -33,36 +33,31 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
   const { videoTrack, remoteUsers, client } = useAgoraRoom(roomId, user?.id || '');
   const { error: presenceError } = useRoomPresence(roomId);
 
-  // Log presence error if any
+  // Log state changes
   useEffect(() => {
-    if (presenceError) {
-      console.error('[ROOM] Presence error:', presenceError);
-    }
-  }, [presenceError]);
-
-  // Log participants and remoteUsers for debugging
-  useEffect(() => {
-    console.log('[ROOM] Current participants:', participants);
+    console.log('[ROOM] User:', user);
+    console.log('[ROOM] Participants:', participants);
     console.log('[ROOM] Remote users:', remoteUsers);
-  }, [participants, remoteUsers]);
+  }, [user, participants, remoteUsers]);
 
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
+    // Slot 1 is always for the current user
     if (slot.index === 1) {
-      // Slot 1 always shows current user
-      return participants.find(p => p.user_id === user?.id);
+      return user ? { user_id: user.id, joined_at: new Date().toISOString() } : null;
     }
 
-    // For other slots, find participant based on join order
-    const otherParticipants = participants
-      .filter(p => p.user_id !== user?.id)
-      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
-    
-    const participant = otherParticipants[slot.index - 2];
-    if (participant) {
-      console.log(`[UI] Slot ${slot.index} assigned to participant ${participant.user_id}`);
+    // For slot 2, return the first remote participant (if any)
+    if (slot.index === 2 && participants.length > 0) {
+      const otherParticipant = participants.find(p => p.user_id !== user?.id);
+      if (otherParticipant) {
+        console.log(`[ROOM] Assigned participant ${otherParticipant.user_id} to slot ${slot.index}`);
+      }
+      return otherParticipant || null;
     }
-    return participant;
+
+    // Other slots are empty for now (we only support 2 participants in test room)
+    return null;
   };
 
   // Empty slot check helper

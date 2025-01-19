@@ -25,24 +25,17 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
   // Helper: Find slot for a user
   const findUserSlot = (uid: string | number) => {
+    console.log(`[AGORA] Finding slot for user ${uid}, current user is ${userId}`);
+    
     // Current user always goes in slot 1
     if (String(uid) === userId) {
-      console.log(`[AGORA] Current user ${uid} assigned to slot 1`);
+      console.log(`[AGORA] Assigning current user ${uid} to slot 1`);
       return 'video-slot-1';
     }
     
-    // Remote users get slots 2-5 based on join order
-    const userIndex = remoteUsers.findIndex(u => String(u.uid) === String(uid));
-    if (userIndex === -1) {
-      console.log(`[AGORA] Could not find user ${uid} in remote users list`);
-      return null;
-    }
-    const slotNumber = userIndex + 2; // +2 because slots 2-5 are for remote users
-    if (slotNumber > 5) {
-      console.log(`[AGORA] No available slot for user ${uid} (slot ${slotNumber} > 5)`);
-      return null;
-    }
-    console.log(`[AGORA] Remote user ${uid} assigned to slot ${slotNumber}`);
+    // For remote users, assign to slots 2-5 sequentially
+    const slotNumber = 2; // Start with slot 2 for the first remote user
+    console.log(`[AGORA] Assigning remote user ${uid} to slot ${slotNumber}`);
     return `video-slot-${slotNumber}`;
   };
 
@@ -115,21 +108,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
-            // Update remote users state FIRST
-            setRemoteUsers(prev => {
-              const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
-              if (existingUserIndex !== -1) {
-                const updatedUsers = [...prev];
-                updatedUsers[existingUserIndex] = user;
-                return updatedUsers;
-              }
-              return [...prev, user];
-            });
-
-            // Wait a bit for state to update
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Handle audio
+            // Handle audio immediately
             if (mediaType === "audio" && user.audioTrack) {
               user.audioTrack.play();
               console.log(`[AGORA] Playing audio for ${user.uid}`);
@@ -137,21 +116,25 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
             // Handle video
             if (mediaType === "video" && user.videoTrack) {
-              // Find slot after state update
-              const slotId = findUserSlot(user.uid);
-              console.log(`[AGORA] Found slot ${slotId} for user ${user.uid}`);
-              
-              if (slotId) {
-                const container = document.getElementById(slotId);
-                if (container) {
-                  container.innerHTML = '';
-                  await user.videoTrack.play(container);
-                  console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
-                } else {
-                  console.error(`[AGORA] No container found for slot ${slotId}`);
+              // Update remote users first
+              setRemoteUsers(prev => {
+                if (!prev.find(u => String(u.uid) === String(user.uid))) {
+                  return [...prev, user];
                 }
+                return prev;
+              });
+
+              // Find slot and play video
+              const slotId = findUserSlot(user.uid);
+              console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
+              
+              const container = document.getElementById(slotId);
+              if (container) {
+                container.innerHTML = '';
+                await user.videoTrack.play(container);
+                console.log(`[AGORA] Successfully played video in slot ${slotId}`);
               } else {
-                console.error(`[AGORA] No slot found for user ${user.uid}`);
+                console.error(`[AGORA] Container not found for slot ${slotId}`);
               }
             }
           } catch (err) {
@@ -171,10 +154,8 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
         client.current.on("user-left", (user) => {
           console.log(`[AGORA] User ${user.uid} left`);
-          // Stop their tracks
           user.audioTrack?.stop();
           user.videoTrack?.stop();
-          // Update state
           setRemoteUsers(prev => prev.filter(u => String(u.uid) !== String(user.uid)));
         });
 
@@ -233,7 +214,6 @@ export function useAgoraRoom(roomId: string, userId: string) {
       
       const cleanup = async () => {
         try {
-          // Stop and close local tracks
           if (localVideoTrack.current) {
             localVideoTrack.current.stop();
             localVideoTrack.current.close();
@@ -244,16 +224,11 @@ export function useAgoraRoom(roomId: string, userId: string) {
             localAudioTrack.current.close();
             localAudioTrack.current = null;
           }
-
-          // Leave channel
           if (client.current?.connectionState === 'CONNECTED') {
             await client.current.leave();
             client.current.removeAllListeners();
             client.current = undefined;
-            console.log("[AGORA] Left channel and cleaned up");
           }
-
-          // Reset state
           setIsConnected(false);
           setRemoteUsers([]);
           setError(null);
