@@ -4,6 +4,7 @@ import { useAgoraRoom } from '@/hooks/useAgoraRoom';
 import { useRoomPresence } from '@/hooks/useRoomPresence';
 import { useUser } from '@/hooks/useUser';
 import { Icons } from '@/components/ui/icons';
+import { supabase } from '@/lib/supabase';
 
 // Define our video slots
 const VIDEO_SLOTS = [
@@ -29,7 +30,7 @@ interface TestVideoRoomProps {
 export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomProps) {
   const navigate = useNavigate();
   const { user } = useUser();
-  const { videoTrack, remoteUsers } = useAgoraRoom(roomId, user?.id || '');
+  const { videoTrack, remoteUsers, client } = useAgoraRoom(roomId, user?.id || '');
   const { error: presenceError } = useRoomPresence(roomId);
 
   // Log presence error if any
@@ -73,9 +74,38 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
   // Handle room exit
   const handleLeaveRoom = async () => {
     try {
+      console.log('[ROOM] Leaving room...');
+
+      // 1. Leave Agora channel if connected
+      if (client?.connectionState === 'CONNECTED') {
+        await client.leave();
+        console.log('[ROOM] Left Agora channel');
+      }
+
+      // 2. Remove from room_participants
+      if (user?.id) {
+        const { error: deleteError } = await supabase
+          .from('room_participants')
+          .delete()
+          .match({
+            room_id: roomId,
+            user_id: user.id
+          });
+
+        if (deleteError) {
+          console.error('[ROOM] Error removing user from room:', deleteError);
+        } else {
+          console.log('[ROOM] Removed user from room_participants');
+        }
+      }
+
+      // 3. Navigate away
+      console.log('[ROOM] Navigating to home');
       navigate('/');
     } catch (err) {
-      console.error('Error leaving room:', err);
+      console.error('[ROOM] Error leaving room:', err);
+      // Even if there's an error, try to navigate away
+      navigate('/');
     }
   };
 

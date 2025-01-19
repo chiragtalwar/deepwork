@@ -115,33 +115,43 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
+            // Update remote users state FIRST
+            setRemoteUsers(prev => {
+              const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
+              if (existingUserIndex !== -1) {
+                const updatedUsers = [...prev];
+                updatedUsers[existingUserIndex] = user;
+                return updatedUsers;
+              }
+              return [...prev, user];
+            });
+
+            // Wait a bit for state to update
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Handle audio
             if (mediaType === "audio" && user.audioTrack) {
               user.audioTrack.play();
               console.log(`[AGORA] Playing audio for ${user.uid}`);
             }
 
-            // For video, play it immediately after subscription
+            // Handle video
             if (mediaType === "video" && user.videoTrack) {
-              // Update remote users first to ensure the slot is ready
-              setRemoteUsers(prev => {
-                const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
-                if (existingUserIndex !== -1) {
-                  const updatedUsers = [...prev];
-                  updatedUsers[existingUserIndex] = user;
-                  return updatedUsers;
-                }
-                return [...prev, user];
-              });
-
-              // Try to play the video
+              // Find slot after state update
               const slotId = findUserSlot(user.uid);
+              console.log(`[AGORA] Found slot ${slotId} for user ${user.uid}`);
+              
               if (slotId) {
                 const container = document.getElementById(slotId);
                 if (container) {
                   container.innerHTML = '';
                   await user.videoTrack.play(container);
                   console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
+                } else {
+                  console.error(`[AGORA] No container found for slot ${slotId}`);
                 }
+              } else {
+                console.error(`[AGORA] No slot found for user ${user.uid}`);
               }
             }
           } catch (err) {
@@ -227,16 +237,19 @@ export function useAgoraRoom(roomId: string, userId: string) {
           if (localVideoTrack.current) {
             localVideoTrack.current.stop();
             localVideoTrack.current.close();
+            localVideoTrack.current = null;
           }
           if (localAudioTrack.current) {
             localAudioTrack.current.stop();
             localAudioTrack.current.close();
+            localAudioTrack.current = null;
           }
 
           // Leave channel
           if (client.current?.connectionState === 'CONNECTED') {
             await client.current.leave();
             client.current.removeAllListeners();
+            client.current = undefined;
             console.log("[AGORA] Left channel and cleaned up");
           }
 
