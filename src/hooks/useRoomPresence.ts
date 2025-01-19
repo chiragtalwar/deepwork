@@ -131,13 +131,16 @@ export function useRoomPresence(roomId: string, userId: string) {
         presenceChannel.unsubscribe();
       }
       
-      // Remove user from room if actually leaving
-      if (!document.hidden) {
-        supabase
-          .from('room_participants')
-          .delete()
-          .match({ room_id: roomId, user_id: userId });
-      }
+      // Always remove user from room when unmounting
+      supabase
+        .from('room_participants')
+        .delete()
+        .match({ room_id: roomId, user_id: userId })
+        .then(({ error }) => {
+          if (error) {
+            console.error('Error removing participant:', error);
+          }
+        });
     };
   }, [roomId, userId]);
 
