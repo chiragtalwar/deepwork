@@ -10,7 +10,7 @@ import { supabase } from '../../lib/supabase';
 
 // Room ID - would come from your room management system
 const TEST_ROOM_UUID = '123e4567-e89b-12d3-a456-426614174000';
-const TEST_ROOM_DURATION = 50; // 50 minutes focus session
+const TEST_ROOM_DURATION = 50; //L 50 minutes focus session
 
 export function TestVideoRoom() {
   const { user } = useAuth();
@@ -104,7 +104,7 @@ export function TestVideoRoom() {
             {/* Left: Title */}
             <div>
               <h1 className="text-2xl font-semibold text-white tracking-tight drop-shadow-lg">
-                Deep Work Room
+                Deep Work Room VERSION 2
               </h1>
               <p className="text-white/90 mt-1 tracking-wide font-light">
                 Focus together, achieve more
