@@ -14,10 +14,18 @@ interface Profile {
   avatar_url: string | null;
 }
 
+// Use a fixed UUID for the test room
+const TEST_ROOM_ID = '123e4567-e89b-12d3-a456-426614174000';
+
 export default function TestRoom() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
-  const { roomId = 'test-room' } = useParams(); // Default roomId for testing
+  const { roomId } = useParams(); 
+  
+  // Use the provided roomId if it's a valid UUID, otherwise use TEST_ROOM_ID
+  const actualRoomId = roomId?.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    ? roomId
+    : TEST_ROOM_ID;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -26,7 +34,7 @@ export default function TestRoom() {
         const { data: participantsData, error: participantsError } = await supabase
           .from('room_participants')
           .select('*')
-          .eq('room_id', roomId);
+          .eq('room_id', actualRoomId);
         
         if (participantsError) {
           console.error('[ROOM] Error fetching participants:', participantsError);
@@ -63,23 +71,23 @@ export default function TestRoom() {
     
     // Subscribe to changes
     const participantsSubscription = supabase
-      .channel(`room_participants:${roomId}`)
+      .channel(`room_participants:${actualRoomId}`)
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
         table: 'room_participants',
-        filter: `room_id=eq.${roomId}`
+        filter: `room_id=eq.${actualRoomId}`
       }, fetchData)
       .subscribe();
 
     return () => {
       participantsSubscription.unsubscribe();
     };
-  }, [roomId]);
+  }, [actualRoomId]);
 
   return (
     <TestVideoRoom
-      roomId={roomId}
+      roomId={actualRoomId}
       participants={participants}
       profiles={profiles}
     />
