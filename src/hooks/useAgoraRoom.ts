@@ -97,9 +97,14 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
-            // Update remote users state FIRST
+            if (mediaType === "audio" && user.audioTrack) {
+              user.audioTrack.play();
+              console.log(`[AGORA] Playing audio for ${user.uid}`);
+            }
+
+            // Update remote users state AFTER successful subscription
             setRemoteUsers(prev => {
-              const existingUserIndex = prev.findIndex(u => u.uid === user.uid);
+              const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
               if (existingUserIndex !== -1) {
                 const updatedUsers = [...prev];
                 updatedUsers[existingUserIndex] = user;
@@ -107,12 +112,6 @@ export function useAgoraRoom(roomId: string, userId: string) {
               }
               return [...prev, user];
             });
-
-            // Play audio immediately
-            if (mediaType === "audio" && user.audioTrack) {
-              user.audioTrack.play();
-              console.log(`[AGORA] Playing audio for ${user.uid}`);
-            }
 
             // For video, use our retry mechanism
             if (mediaType === "video" && user.videoTrack) {
@@ -139,7 +138,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
           user.audioTrack?.stop();
           user.videoTrack?.stop();
           // Update state
-          setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+          setRemoteUsers(prev => prev.filter(u => String(u.uid) !== String(user.uid)));
         });
 
         // 3. Join the channel

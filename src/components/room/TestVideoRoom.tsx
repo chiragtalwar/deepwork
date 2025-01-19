@@ -73,22 +73,6 @@ export function TestVideoRoom() {
     return participantIndex + 2; // +2 because slots 2-5 are for other participants
   };
 
-  // Empty slot check helper
-  const isSlotEmpty = (slot: { id: string; index: number }) => {
-    if (slot.index === 1) {
-      // Slot 1 is only empty if there's no current user
-      return !user?.id;
-    }
-    
-    // For slots 2-5, check if there's another participant assigned to this slot
-    const otherParticipants = participants
-      .filter(p => p.user_id !== user?.id)
-      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
-    
-    const slotUser = otherParticipants[slot.index - 2]; // -2 because slots 2-5 are for others
-    return !slotUser;
-  };
-
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
     if (slot.index === 1) {
@@ -102,6 +86,12 @@ export function TestVideoRoom() {
       .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
     
     return otherParticipants[slot.index - 2];
+  };
+
+  // Empty slot check helper
+  const isSlotEmpty = (slot: { id: string; index: number }) => {
+    const participant = getSlotParticipant(slot);
+    return !participant;
   };
 
   // Handle room exit
@@ -283,6 +273,8 @@ export function TestVideoRoom() {
                 const participant = getSlotParticipant(slot);
                 const isCurrentUser = participant?.user_id === user?.id;
                 const profile = participant ? profiles[participant.user_id] : null;
+                
+                // Find remote user's video track
                 const remoteUser = participant && !isCurrentUser 
                   ? remoteUsers.find(u => String(u.uid) === participant.user_id)
                   : null;
