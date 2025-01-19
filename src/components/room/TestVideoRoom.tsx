@@ -218,6 +218,7 @@ export function TestVideoRoom() {
               {participants.slice(0, 5).map(participant => {
                 const isCurrentUser = participant.user_id === user?.id;
                 const profile = profiles[participant.user_id];
+                const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
                 
                 return (
                   <div key={participant.user_id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
@@ -226,21 +227,25 @@ export function TestVideoRoom() {
                         // Local video
                         <div ref={localVideoRef} className="absolute inset-0" />
                       ) : (
-                        // Remote video
+                        // Remote video - Create container immediately
                         <div 
                           data-user-video={participant.user_id}
                           ref={el => {
-                            videoContainersRef.current[participant.user_id] = el;
-                            const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
-                            if (el && remoteUser?.videoTrack) {
-                              remoteUser.videoTrack.play(el);
+                            if (el) {
+                              videoContainersRef.current[participant.user_id] = el;
+                              // Try to play video if we already have the track
+                              if (remoteUser?.videoTrack) {
+                                console.log(`[UI] Playing existing video track for ${participant.user_id}`);
+                                remoteUser.videoTrack.play(el);
+                              }
                             }
                           }}
                           className="absolute inset-0" 
                         />
                       )}
+                      
                       {/* Show camera not available message if no video */}
-                      {(!videoTrack && isCurrentUser) || (!remoteUsers.find(u => u.uid === participant.user_id)?.videoTrack && !isCurrentUser) ? (
+                      {(!videoTrack && isCurrentUser) || (!remoteUser?.videoTrack && !isCurrentUser) ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                           <div className="flex flex-col items-center">
                             <Icons.video className="w-6 h-6 text-white/40 mb-2" />
