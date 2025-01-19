@@ -149,10 +149,26 @@ export function useAgoraRoom(roomId: string, userId: string) {
           return [...prev, user];
         });
 
-        // Play audio track immediately if it's audio
+        // Play tracks immediately
         if (mediaType === 'audio' && user.audioTrack) {
           user.audioTrack.play();
           console.log(`Playing audio track for user ${user.uid}`);
+        }
+        
+        // For video tracks, we need to ensure the container exists and play immediately
+        if (mediaType === 'video' && user.videoTrack) {
+          // Try to find or wait for the video container
+          const tryPlayVideo = () => {
+            const container = document.querySelector(`[data-user-video="${user.uid}"]`);
+            if (container) {
+              user.videoTrack?.play(container as HTMLElement);
+              console.log(`Playing video track for user ${user.uid}`);
+            } else {
+              // If container isn't ready, retry after a short delay
+              setTimeout(tryPlayVideo, 100);
+            }
+          };
+          tryPlayVideo();
         }
       } catch (error) {
         console.error(`Failed to handle remote user ${user.uid} published:`, error);

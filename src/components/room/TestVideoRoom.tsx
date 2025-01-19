@@ -228,6 +228,7 @@ export function TestVideoRoom() {
                       ) : (
                         // Remote video
                         <div 
+                          data-user-video={participant.user_id}
                           ref={el => {
                             videoContainersRef.current[participant.user_id] = el;
                             const remoteUser = remoteUsers.find(u => u.uid === participant.user_id);
