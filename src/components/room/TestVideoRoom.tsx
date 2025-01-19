@@ -267,19 +267,13 @@ export function TestVideoRoom() {
                       {/* Video Container - Always Present */}
                       <div 
                         id={slot.id}
-                        data-slot={slot.index}
-                        data-user-id={participant?.user_id}
                         className="absolute inset-0"
                         ref={el => {
-                          // Set up local video reference
-                          if (isCurrentUser && el) {
-                            if (videoTrack) {
-                              console.log(`[UI] Playing local video in slot ${slot.index}`);
-                              videoTrack.play(el);
-                            }
+                          // Only handle local video (slot 1)
+                          if (slot.index === 1 && isCurrentUser && el && videoTrack) {
+                            console.log(`[UI] Playing local video in slot 1`);
+                            videoTrack.play(el);
                           }
-                          // For remote videos, the container is already available
-                          // useAgoraRoom will handle playing remote videos
                         }}
                       />
 

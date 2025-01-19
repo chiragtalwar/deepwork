@@ -17,10 +17,13 @@ export function useAgoraRoom(roomId: string, userId: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper to find a user's slot
+  // Helper to find a user's slot based on participant index
   const findUserSlot = (uid: string | number) => {
-    const slotEl = document.querySelector(`[data-user-id="${uid}"]`);
-    return slotEl ? slotEl.id : null;
+    // Find the index of this user in remoteUsers array
+    const userIndex = remoteUsers.findIndex(u => u.uid === uid);
+    // Remote users start from slot 2 (slot 1 is for local user)
+    const slotNumber = userIndex + 2;
+    return `video-slot-${slotNumber}`;
   };
 
   useEffect(() => {
@@ -54,29 +57,32 @@ export function useAgoraRoom(roomId: string, userId: string) {
               console.log(`[AGORA] Playing audio for ${user.uid}`);
             }
 
-            // For video, find the correct slot and play
-            if (mediaType === "video" && user.videoTrack) {
-              const slotId = findUserSlot(user.uid);
-              if (slotId) {
-                const container = document.getElementById(slotId);
-                if (container) {
-                  user.videoTrack.play(container);
-                  console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
-                } else {
-                  console.error(`[AGORA] Slot ${slotId} container not found for ${user.uid}`);
-                }
-              } else {
-                console.error(`[AGORA] No slot found for user ${user.uid}`);
-              }
-            }
-
-            // Update remote users state
+            // Update remote users state FIRST
             setRemoteUsers(prev => {
               if (prev.find(u => u.uid === user.uid)) {
                 return prev.map(u => u.uid === user.uid ? user : u);
               }
               return [...prev, user];
             });
+
+            // For video, find the correct slot and play
+            if (mediaType === "video" && user.videoTrack) {
+              // Calculate slot based on user index
+              const slotId = findUserSlot(user.uid);
+              console.log(`[AGORA] Attempting to play video in slot ${slotId} for user ${user.uid}`);
+
+              const container = document.getElementById(slotId);
+              if (container) {
+                try {
+                  user.videoTrack.play(container);
+                  console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${user.uid}`);
+                } catch (err) {
+                  console.error(`[AGORA] Failed to play video in slot ${slotId}:`, err);
+                }
+              } else {
+                console.error(`[AGORA] Slot ${slotId} container not found`);
+              }
+            }
           } catch (err) {
             console.error(`[AGORA] Error handling user-published:`, err);
           }
