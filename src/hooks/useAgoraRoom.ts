@@ -115,26 +115,34 @@ export function useAgoraRoom(roomId: string, userId: string) {
             await client.current?.subscribe(user, mediaType);
             console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
 
-            // Update remote users state first
-            setRemoteUsers(prev => {
-              const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
-              if (existingUserIndex !== -1) {
-                const updatedUsers = [...prev];
-                updatedUsers[existingUserIndex] = user;
-                return updatedUsers;
-              }
-              return [...prev, user];
-            });
-
-            // Handle audio immediately
             if (mediaType === "audio" && user.audioTrack) {
               user.audioTrack.play();
               console.log(`[AGORA] Playing audio for ${user.uid}`);
             }
 
-            // For video, use our retry mechanism
+            // For video, play it immediately after subscription
             if (mediaType === "video" && user.videoTrack) {
-              await playVideoWithRetries(user.videoTrack, user.uid);
+              // Update remote users first to ensure the slot is ready
+              setRemoteUsers(prev => {
+                const existingUserIndex = prev.findIndex(u => String(u.uid) === String(user.uid));
+                if (existingUserIndex !== -1) {
+                  const updatedUsers = [...prev];
+                  updatedUsers[existingUserIndex] = user;
+                  return updatedUsers;
+                }
+                return [...prev, user];
+              });
+
+              // Try to play the video
+              const slotId = findUserSlot(user.uid);
+              if (slotId) {
+                const container = document.getElementById(slotId);
+                if (container) {
+                  container.innerHTML = '';
+                  await user.videoTrack.play(container);
+                  console.log(`[AGORA] Playing video for ${user.uid} in slot ${slotId}`);
+                }
+              }
             }
           } catch (err) {
             console.error(`[AGORA] Error handling user-published:`, err);
@@ -172,15 +180,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
         // 4. Create and publish local tracks
         const [audioTrack, videoTrack] = await Promise.all([
           AgoraRTC.createMicrophoneAudioTrack(),
-          AgoraRTC.createCameraVideoTrack({
-            encoderConfig: {
-              width: 640,
-              height: 360,
-              frameRate: 15,
-              bitrateMin: 200,
-              bitrateMax: 400
-            }
-          })
+          AgoraRTC.createCameraVideoTrack()
         ]);
 
         if (!mounted) {
@@ -192,11 +192,19 @@ export function useAgoraRoom(roomId: string, userId: string) {
         localAudioTrack.current = audioTrack;
         localVideoTrack.current = videoTrack;
 
-        // 5. Publish local tracks
+        // 5. Play local video in slot 1
+        const localContainer = document.getElementById('video-slot-1');
+        if (localContainer) {
+          localContainer.innerHTML = '';
+          await videoTrack.play(localContainer);
+          console.log("[AGORA] Playing local video in slot 1");
+        }
+
+        // 6. Publish local tracks
         await client.current.publish([audioTrack, videoTrack]);
         console.log("[AGORA] Local tracks published");
 
-        // 6. Set initial state
+        // 7. Set initial state
         setIsConnected(true);
         setRemoteUsers(client.current.remoteUsers);
 
