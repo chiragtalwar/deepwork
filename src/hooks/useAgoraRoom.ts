@@ -34,15 +34,18 @@ export function useAgoraRoom(roomId: string, userId: string) {
     }
     
     // Get currently taken slots (2-5)
-    const takenSlots = new Set(
-      remoteUsers
-        .filter(u => String(u.uid) !== userId)
-        .map(u => {
-          const existingSlot = document.querySelector(`[data-user="${u.uid}"]`)?.id;
-          return existingSlot ? parseInt(existingSlot.split('-')[2]) : null;
-        })
-        .filter(slot => slot !== null)
-    );
+    const takenSlots = new Set();
+    
+    // First add slots from existing remote users
+    remoteUsers.forEach(u => {
+      const container = document.querySelector(`[data-user="${u.uid}"]`);
+      if (container) {
+        const slotMatch = container.id.match(/video-slot-(\d+)/);
+        if (slotMatch) {
+          takenSlots.add(parseInt(slotMatch[1]));
+        }
+      }
+    });
     
     // Find first available slot from 2-5
     for (let slot = 2; slot <= 5; slot++) {
