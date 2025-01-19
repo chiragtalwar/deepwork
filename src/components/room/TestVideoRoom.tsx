@@ -43,7 +43,11 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
       .filter(p => p.user_id !== user?.id)
       .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
     
-    return otherParticipants[slot.index - 2];
+    const participant = otherParticipants[slot.index - 2];
+    if (participant) {
+      console.log(`[UI] Slot ${slot.index} assigned to participant ${participant.user_id}`);
+    }
+    return participant;
   };
 
   // Empty slot check helper
@@ -77,18 +81,13 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
       </div>
 
       {/* Video Grid */}
-      <div className="flex-1 flex items-center justify-center mt-16">
-        <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
+      <div className="absolute inset-0 pt-16 p-4">
+        <div className="grid grid-cols-2 gap-4 h-full">
           {VIDEO_SLOTS.map((slot) => {
             const participant = getSlotParticipant(slot);
             const isCurrentUser = participant?.user_id === user?.id;
             const profile = participant ? profiles[participant.user_id] : null;
             
-            // Find remote user's video track
-            const remoteUser = participant && !isCurrentUser 
-              ? remoteUsers.find(u => String(u.uid) === participant.user_id)
-              : null;
-
             return (
               <div key={slot.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                 <div className="aspect-video bg-black/40 relative">
@@ -96,60 +95,35 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
                   <div 
                     id={slot.id}
                     className="absolute inset-0"
-                    ref={el => {
-                      // Only set up local video in slot 1
-                      if (slot.index === 1 && el && videoTrack) {
-                        console.log(`[UI] Setting up local video in slot 1`);
-                        el.innerHTML = '';
-                        try {
-                          videoTrack.play(el);
-                          console.log('[UI] Successfully played local video in slot 1');
-                        } catch (err) {
-                          console.error('[UI] Failed to play local video:', err);
-                        }
-                      }
-                    }}
                   />
 
                   {/* Empty Slot Overlay */}
                   {isSlotEmpty(slot) && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <div className="flex flex-col items-center">
-                        <Icons.users className="w-6 h-6 text-white/40 mb-2" />
-                        <p className="text-white/80 text-sm">Slot {slot.index} Available</p>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-white/50 flex flex-col items-center gap-2">
+                        <Icons.user className="w-8 h-8" />
+                        <span className="text-sm">Empty Slot</span>
                       </div>
                     </div>
                   )}
 
-                  {/* Camera Not Available Overlay */}
-                  {participant && ((!videoTrack && isCurrentUser) || (!remoteUser?.videoTrack && !isCurrentUser)) && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <div className="flex flex-col items-center">
-                        <Icons.video className="w-6 h-6 text-white/40 mb-2" />
-                        <p className="text-white/80 text-sm">Camera not available</p>
+                  {/* Participant Info */}
+                  {participant && profile && (
+                    <div className="absolute bottom-0 inset-x-0 h-12 bg-gradient-to-t from-black/80 to-transparent">
+                      <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
+                          {profile.avatar_url ? (
+                            <img src={profile.avatar_url} alt="" className="w-full h-full rounded-full" />
+                          ) : (
+                            <Icons.user className="w-4 h-4 text-white/70" />
+                          )}
+                        </div>
+                        <span className="text-sm text-white/90">{profile.full_name}</span>
+                        {isCurrentUser && <span className="text-xs text-white/50">(You)</span>}
                       </div>
                     </div>
                   )}
                 </div>
-
-                {/* Participant Info */}
-                {participant && (
-                  <div className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
-                        {profile?.full_name?.[0] || participant.user_id[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {profile?.full_name || 'Unknown User'}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          Currently Working On
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}

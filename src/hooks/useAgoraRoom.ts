@@ -33,25 +33,38 @@ export function useAgoraRoom(roomId: string, userId: string) {
     
     // Remote users get slots 2-5 based on join order
     const userIndex = remoteUsers.findIndex(u => String(u.uid) === String(uid));
+    if (userIndex === -1) {
+      console.log(`[AGORA] Could not find user ${uid} in remote users list`);
+      return null;
+    }
     const slotNumber = userIndex + 2; // +2 because slots 2-5 are for remote users
+    if (slotNumber > 5) {
+      console.log(`[AGORA] No available slot for user ${uid} (slot ${slotNumber} > 5)`);
+      return null;
+    }
     console.log(`[AGORA] Remote user ${uid} assigned to slot ${slotNumber}`);
     return `video-slot-${slotNumber}`;
   };
 
   // Helper: Play video with retries
-  const playVideoWithRetries = async (videoTrack: any, uid: string | number, maxRetries = 5) => {
+  const playVideoWithRetries = async (videoTrack: any, uid: string | number, maxRetries = 20) => {
     let retries = 0;
     
     const tryPlay = async () => {
       const slotId = findUserSlot(uid);
+      if (!slotId) {
+        console.log(`[AGORA] No slot found for user ${uid}`);
+        return;
+      }
+      
       console.log(`[AGORA] Attempt ${retries + 1} to play video in slot ${slotId} for user ${uid}`);
       
       const container = document.getElementById(slotId);
       if (!container) {
-        console.log(`[AGORA] Container ${slotId} not found, will retry in 1s`);
+        console.log(`[AGORA] Container ${slotId} not found, will retry in 500ms`);
         if (retries < maxRetries) {
           retries++;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 500));
           return tryPlay();
         }
         throw new Error(`Container ${slotId} not found after ${maxRetries} retries`);
@@ -65,7 +78,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
         console.error(`[AGORA] Error playing video:`, err);
         if (retries < maxRetries) {
           retries++;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 500));
           return tryPlay();
         }
         throw err;
