@@ -256,12 +256,29 @@ export function useAgoraRoom(roomId: string, userId: string) {
     };
   }, [roomId, userId]);
 
+  // Return the client and tracks
   return {
     client: client.current,
     videoTrack: localVideoTrack.current,
     audioTrack: localAudioTrack.current,
     remoteUsers,
-    isConnected,
-    error
+    isConnected: client.current?.connectionState === 'CONNECTED',
+    error,
+    toggleVideo: async () => {
+      if (localVideoTrack.current) {
+        const enabled = !localVideoTrack.current.enabled;
+        await localVideoTrack.current.setEnabled(enabled);
+        return enabled;
+      }
+      return false;
+    },
+    toggleAudio: async () => {
+      if (localAudioTrack.current) {
+        const enabled = !localAudioTrack.current.enabled;
+        await localAudioTrack.current.setEnabled(enabled);
+        return enabled;
+      }
+      return false;
+    }
   };
 }
