@@ -131,9 +131,8 @@ export function useRoomPresence(roomId: string, userId: string) {
         presenceChannel.unsubscribe();
       }
       
-      // Only remove user from room if browser/tab is closing
-      // Not when explicitly leaving room (handled by leave button)
-      if (document.hidden) {
+      // Remove user from room if actually leaving
+      if (!document.hidden) {
         supabase
           .from('room_participants')
           .delete()

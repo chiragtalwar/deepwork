@@ -26,11 +26,7 @@ const VIDEO_CONFIG = {
 
 export function useAgoraRoom(roomId: string, userId: string) {
   // Core refs - these persist through re-renders
-  const client = useRef<IAgoraRTCClient>(AgoraRTC.createClient({ 
-    mode: "rtc", 
-    codec: "vp8",
-    role: "host"
-  }));
+  const client = useRef<IAgoraRTCClient>();
   const videoTrackRef = useRef<ICameraVideoTrack | null>(null);
   const audioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
   const isInitializedRef = useRef(false);
@@ -43,6 +39,16 @@ export function useAgoraRoom(roomId: string, userId: string) {
   // Initialize tracks with proper error handling
   const initializeTracks = async () => {
     try {
+      // Close existing tracks first
+      if (videoTrackRef.current) {
+        videoTrackRef.current.close();
+        videoTrackRef.current = null;
+      }
+      if (audioTrackRef.current) {
+        audioTrackRef.current.close();
+        audioTrackRef.current = null;
+      }
+
       // Request permissions first
       await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
@@ -64,6 +70,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
       return { videoTrack, audioTrack };
     } catch (error) {
+      console.error('Failed to initialize tracks:', error);
       throw new Error(`Failed to initialize tracks: ${error}`);
     }
   };
@@ -83,12 +90,81 @@ export function useAgoraRoom(roomId: string, userId: string) {
     }
   };
 
+  // Cleanup function
+  const cleanup = async () => {
+    try {
+      if (client.current) {
+        // Unpublish tracks first
+        if (videoTrackRef.current || audioTrackRef.current) {
+          const tracks = [videoTrackRef.current, audioTrackRef.current].filter((track): track is ICameraVideoTrack | IMicrophoneAudioTrack => track !== null);
+          await client.current.unpublish(tracks);
+        }
+
+        // Leave the channel
+        await client.current.leave();
+      }
+
+      // Close tracks
+      if (videoTrackRef.current) {
+        videoTrackRef.current.close();
+        videoTrackRef.current = null;
+      }
+      if (audioTrackRef.current) {
+        audioTrackRef.current.close();
+        audioTrackRef.current = null;
+      }
+
+      // Reset state
+      setRemoteUsers([]);
+      setIsConnected(false);
+      isInitializedRef.current = false;
+    } catch (error) {
+      console.error('Cleanup error:', error);
+    }
+  };
+
   // Initialize room connection
   useEffect(() => {
     if (!userId || isInitializedRef.current) return;
 
     const initialize = async () => {
       try {
+        // Create new client instance
+        client.current = AgoraRTC.createClient({ 
+          mode: "rtc", 
+          codec: "vp8",
+          role: "host"
+        });
+
+        // Set up event listeners
+        client.current.on('user-published', async (user, mediaType) => {
+          try {
+            await client.current?.subscribe(user, mediaType);
+            
+            if (mediaType === 'video') {
+              setRemoteUsers(prev => {
+                const exists = prev.some(u => u.uid === user.uid);
+                if (!exists) {
+                  return [...prev, user];
+                }
+                return prev.map(u => u.uid === user.uid ? user : u);
+              });
+            }
+          } catch (error) {
+            console.error('Subscribe error:', error);
+          }
+        });
+
+        client.current.on('user-unpublished', (user, mediaType) => {
+          if (mediaType === 'video') {
+            setRemoteUsers(prev => prev.map(u => u.uid === user.uid ? user : u));
+          }
+        });
+
+        client.current.on('user-left', (user) => {
+          setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+        });
+
         // Join the channel
         await client.current.join(
           import.meta.env.VITE_AGORA_APP_ID!,
@@ -104,34 +180,12 @@ export function useAgoraRoom(roomId: string, userId: string) {
         isInitializedRef.current = true;
         setIsConnected(true);
       } catch (error) {
+        console.error('Initialize error:', error);
         setError(`Failed to initialize room: ${error}`);
         setIsConnected(false);
+        await cleanup();
       }
     };
-
-    // Set up event listeners
-    client.current.on('user-published', async (user, mediaType) => {
-      await client.current.subscribe(user, mediaType);
-      
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => {
-          if (!prev.some(u => u.uid === user.uid)) {
-            return [...prev, user];
-          }
-          return prev;
-        });
-      }
-    });
-
-    client.current.on('user-unpublished', (user, mediaType) => {
-      if (mediaType === 'video') {
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-      }
-    });
-
-    client.current.on('user-left', (user) => {
-      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-    });
 
     // Handle visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -139,16 +193,13 @@ export function useAgoraRoom(roomId: string, userId: string) {
     // Initialize
     initialize();
 
-    // Cleanup only when truly leaving
+    // Cleanup
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       
       // Only cleanup if we're actually leaving the page
       if (!document.hidden) {
-        client.current.leave();
-        videoTrackRef.current?.close();
-        audioTrackRef.current?.close();
-        isInitializedRef.current = false;
+        cleanup();
       }
     };
   }, [roomId, userId]);
