@@ -3,26 +3,14 @@ import AgoraRTC, {
   IAgoraRTCClient, 
   ICameraVideoTrack, 
   IMicrophoneAudioTrack,
-  IAgoraRTCRemoteUser,
-  UID
+  IAgoraRTCRemoteUser
 } from 'agora-rtc-sdk-ng';
 
-const VIDEO_CONFIG = {
-  encoderConfig: {
-    width: 640,
-    height: 360,
-    frameRate: 15,
-    bitrateMin: 200,
-    bitrateMax: 400,
-  },
-  optimizationMode: "detail"
-} as const;
-
 export function useAgoraRoom(roomId: string, userId: string) {
-  // Core refs
-  const clientRef = useRef<IAgoraRTCClient>();
-  const localVideoTrackRef = useRef<ICameraVideoTrack | null>(null);
-  const localAudioTrackRef = useRef<IMicrophoneAudioTrack | null>(null);
+  // Core refs that persist through re-renders
+  const client = useRef<IAgoraRTCClient>();
+  const localVideoTrack = useRef<ICameraVideoTrack | null>(null);
+  const localAudioTrack = useRef<IMicrophoneAudioTrack | null>(null);
   
   // States
   const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
@@ -36,27 +24,56 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
     const setupAgora = async () => {
       try {
-        // 1. Create Agora Client
-        const client = AgoraRTC.createClient({ 
-          mode: "rtc", 
-          codec: "vp8" 
-        });
-        clientRef.current = client;
-        console.log("[AGORA] Client created");
+        // 1. Create Agora Client if not exists
+        if (!client.current) {
+          client.current = AgoraRTC.createClient({ 
+            mode: "rtc", 
+            codec: "vp8" 
+          });
+          console.log("[AGORA] Client created");
+        }
 
-        // 2. Create local tracks
-        const [audioTrack, videoTrack] = await Promise.all([
-          AgoraRTC.createMicrophoneAudioTrack(),
-          AgoraRTC.createCameraVideoTrack(VIDEO_CONFIG)
-        ]);
-        if (!mounted) return;
-        
-        localAudioTrackRef.current = audioTrack;
-        localVideoTrackRef.current = videoTrack;
-        console.log("[AGORA] Local tracks created");
+        // 2. Set up event handlers BEFORE joining
+        client.current.on("user-published", async (user, mediaType) => {
+          console.log(`[AGORA] User ${user.uid} published ${mediaType}`);
+          
+          try {
+            // Subscribe to the user
+            await client.current?.subscribe(user, mediaType);
+            console.log(`[AGORA] Subscribed to ${user.uid}'s ${mediaType}`);
+
+            if (mediaType === "audio" && user.audioTrack) {
+              // Play audio immediately
+              user.audioTrack.play();
+              console.log(`[AGORA] Playing audio for ${user.uid}`);
+            }
+
+            // Update remote users state to trigger UI update
+            setRemoteUsers(prev => {
+              if (prev.find(u => u.uid === user.uid)) {
+                return prev.map(u => u.uid === user.uid ? user : u);
+              }
+              return [...prev, user];
+            });
+          } catch (err) {
+            console.error(`[AGORA] Error handling user-published:`, err);
+          }
+        });
+
+        client.current.on("user-unpublished", (user, mediaType) => {
+          console.log(`[AGORA] User ${user.uid} unpublished ${mediaType}`);
+          if (mediaType === "audio") {
+            user.audioTrack?.stop();
+          }
+        });
+
+        client.current.on("user-left", (user) => {
+          console.log(`[AGORA] User ${user.uid} left`);
+          setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+        });
 
         // 3. Join the channel
-        await client.join(
+        await client.current.join(
           import.meta.env.VITE_AGORA_APP_ID!,
           roomId,
           null,
@@ -64,98 +81,36 @@ export function useAgoraRoom(roomId: string, userId: string) {
         );
         console.log("[AGORA] Joined channel:", roomId);
 
-        // 4. Publish local tracks
-        await client.publish([audioTrack, videoTrack]);
-        console.log("[AGORA] Published local tracks");
-
-        // 5. Set up event handlers
-        client.on("user-published", async (user, mediaType) => {
-          console.log("[AGORA] User published:", user.uid, mediaType);
-          
-          try {
-            // Subscribe to the remote user
-            await client.subscribe(user, mediaType);
-            console.log("[AGORA] Subscribed to:", user.uid, mediaType);
-
-            // Update remote users state FIRST
-            setRemoteUsers(prev => {
-              const exists = prev.find(u => u.uid === user.uid);
-              if (exists) {
-                return prev.map(u => u.uid === user.uid ? user : u);
-              }
-              return [...prev, user];
-            });
-
-            // Handle audio immediately
-            if (mediaType === "audio" && user.audioTrack) {
-              user.audioTrack.play();
-              console.log("[AGORA] Playing audio for:", user.uid);
+        // 4. Create and publish local tracks
+        const [audioTrack, videoTrack] = await Promise.all([
+          AgoraRTC.createMicrophoneAudioTrack(),
+          AgoraRTC.createCameraVideoTrack({
+            encoderConfig: {
+              width: 640,
+              height: 360,
+              frameRate: 15,
+              bitrateMin: 200,
+              bitrateMax: 400
             }
+          })
+        ]);
 
-            // For video, we need to ensure the container exists
-            if (mediaType === "video" && user.videoTrack) {
-              console.log("[AGORA] Setting up video for:", user.uid);
-              
-              const playVideo = async () => {
-                return new Promise<void>((resolve, reject) => {
-                  let attempts = 0;
-                  const maxAttempts = 20;
-                  
-                  const tryPlay = () => {
-                    const container = document.querySelector(`[data-user-video="${user.uid}"]`);
-                    if (container) {
-                      try {
-                        user.videoTrack?.play(container as HTMLElement);
-                        console.log(`[AGORA] Successfully played video for user ${user.uid}`);
-                        resolve();
-                      } catch (err) {
-                        console.error(`[AGORA] Error playing video for ${user.uid}:`, err);
-                        reject(err);
-                      }
-                    } else {
-                      attempts++;
-                      if (attempts < maxAttempts) {
-                        console.log(`[AGORA] Container not found for ${user.uid}, attempt ${attempts}/${maxAttempts}`);
-                        setTimeout(tryPlay, 500);
-                      } else {
-                        const error = new Error(`Failed to find video container for ${user.uid} after ${maxAttempts} attempts`);
-                        console.error("[AGORA]", error);
-                        reject(error);
-                      }
-                    }
-                  };
-                  
-                  tryPlay();
-                });
-              };
+        if (!mounted) {
+          audioTrack.close();
+          videoTrack.close();
+          return;
+        }
 
-              playVideo().catch(err => {
-                console.error("[AGORA] Final video play error:", err);
-              });
-            }
-          } catch (err) {
-            console.error("[AGORA] Error handling user published event:", err);
-          }
-        });
+        localAudioTrack.current = audioTrack;
+        localVideoTrack.current = videoTrack;
 
-        client.on("user-unpublished", (user, mediaType) => {
-          console.log("[AGORA] User unpublished:", user.uid, mediaType);
-          if (mediaType === "audio") {
-            user.audioTrack?.stop();
-          }
-          if (mediaType === "video") {
-            user.videoTrack?.stop();
-          }
-        });
+        // 5. Publish local tracks
+        await client.current.publish([audioTrack, videoTrack]);
+        console.log("[AGORA] Local tracks published");
 
-        client.on("user-left", (user) => {
-          console.log("[AGORA] User left:", user.uid);
-          setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-        });
-
-        // 6. Set initial remote users if any
-        setRemoteUsers(client.remoteUsers);
+        // 6. Set initial state
         setIsConnected(true);
+        setRemoteUsers(client.current.remoteUsers);
 
       } catch (err) {
         console.error("[AGORA] Setup error:", err);
@@ -170,28 +125,21 @@ export function useAgoraRoom(roomId: string, userId: string) {
       mounted = false;
       const cleanup = async () => {
         try {
-          const client = clientRef.current;
-          if (client) {
-            // Stop all remote users first
-            setRemoteUsers([]);
-            
-            // Stop and close local tracks
-            if (localVideoTrackRef.current) {
-              localVideoTrackRef.current.stop();
-              localVideoTrackRef.current.close();
-            }
-            if (localAudioTrackRef.current) {
-              localAudioTrackRef.current.stop();
-              localAudioTrackRef.current.close();
-            }
+          // Stop and close local tracks
+          if (localVideoTrack.current) {
+            localVideoTrack.current.stop();
+            localVideoTrack.current.close();
+          }
+          if (localAudioTrack.current) {
+            localAudioTrack.current.stop();
+            localAudioTrack.current.close();
+          }
 
-            // Leave the channel
-            if (client.connectionState === 'CONNECTED') {
-              await client.leave();
-            }
-
-            // Remove all event listeners
-            client.removeAllListeners();
+          // Leave channel
+          if (client.current?.connectionState === 'CONNECTED') {
+            await client.current.leave();
+            client.current.removeAllListeners();
+            console.log("[AGORA] Left channel and cleaned up");
           }
         } catch (err) {
           console.error("[AGORA] Cleanup error:", err);
@@ -202,9 +150,9 @@ export function useAgoraRoom(roomId: string, userId: string) {
   }, [roomId, userId]);
 
   return {
-    client: clientRef.current,
-    videoTrack: localVideoTrackRef.current,
-    audioTrack: localAudioTrackRef.current,
+    client: client.current,
+    videoTrack: localVideoTrack.current,
+    audioTrack: localAudioTrack.current,
     remoteUsers,
     isConnected,
     error

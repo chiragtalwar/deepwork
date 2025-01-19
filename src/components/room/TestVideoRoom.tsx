@@ -139,19 +139,20 @@ export function TestVideoRoom() {
     if (localVideoRef.current && videoTrack) {
       try {
         videoTrack.play(localVideoRef.current);
-        console.log("[UI] Playing local video track");
+        console.log("[UI] Playing local video");
       } catch (err) {
         console.error("[UI] Failed to play local video:", err);
       }
     }
-  }, [videoTrack, localVideoRef.current]);
+  }, [videoTrack]);
 
   // Play remote videos when tracks are available
   useEffect(() => {
     console.log("[UI] Remote users updated:", remoteUsers);
+    
     remoteUsers.forEach(user => {
       if (user.videoTrack) {
-        const container = remoteVideoRefs.current[user.uid];
+        const container = document.querySelector(`[data-user-video="${user.uid}"]`) as HTMLElement;
         if (container) {
           try {
             user.videoTrack.play(container);
@@ -160,7 +161,7 @@ export function TestVideoRoom() {
             console.error(`[UI] Failed to play remote video for user ${user.uid}:`, err);
           }
         } else {
-          console.log(`[UI] Container not ready for user ${user.uid}`);
+          console.log(`[UI] Container not found for user ${user.uid}`);
         }
       }
     });
@@ -284,7 +285,6 @@ export function TestVideoRoom() {
                       ) : (
                         // Remote video container
                         <div 
-                          ref={el => remoteVideoRefs.current[participant.user_id] = el}
                           data-user-video={participant.user_id}
                           className="absolute inset-0" 
                         />
