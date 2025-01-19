@@ -155,8 +155,9 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
                   {/* Video Container */}
                   <div 
                     id={slot.id}
-                          className="absolute inset-0" 
-                        />
+                    data-user={participant?.user_id}
+                    className="absolute inset-0" 
+                  />
 
                   {/* Empty Slot Overlay */}
                   {isSlotEmpty(slot) && (
