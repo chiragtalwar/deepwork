@@ -81,17 +81,17 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
     
     // For other slots, check if we have both:
     // 1. A participant assigned to this slot
-    // 2. A matching remote user with an active video track
+    // 2. A matching remote user with a video track
     if (!participant) {
       console.log(`[ROOM] Slot ${slot.index}: No participant assigned`);
       return true;
     }
 
     const matchingRemoteUser = remoteUsers.find(u => String(u.uid) === participant.user_id);
-    const hasVideo = matchingRemoteUser?.hasVideo;
+    const hasVideoTrack = !!matchingRemoteUser?.videoTrack;
     
-    console.log(`[ROOM] Slot ${slot.index}: User=${participant.user_id}, hasVideo=${hasVideo}`);
-    return !hasVideo;
+    console.log(`[ROOM] Slot ${slot.index}: User=${participant.user_id}, hasVideoTrack=${hasVideoTrack}`);
+    return !hasVideoTrack;
   };
 
   // Handle room exit
