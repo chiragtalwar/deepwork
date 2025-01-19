@@ -80,58 +80,40 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
       return user ? { user_id: user.id, joined_at: new Date().toISOString() } : null;
     }
 
-    // For slots 2-5, find participants based on join order
+    // For slots 2-5, use remoteUsers array for ordering
     if (slot.index >= 2 && slot.index <= 5) {
-      // Filter out current user and sort by join time
-      const otherParticipants = participants
-        .filter(p => p.user_id !== user?.id)
-        .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
-
-      // Get participant for this slot (index - 2 because slots start at 2)
-      const participantIndex = slot.index - 2;
-      if (participantIndex < otherParticipants.length) {
-        const participant = otherParticipants[participantIndex];
-        console.log(`[ROOM] Slot ${slot.index}: Assigned to participant ${participant.user_id} (joined at ${participant.joined_at})`);
-        return participant;
+      const remoteIndex = slot.index - 2;
+      const remoteUser = remoteUsers[remoteIndex];
+      
+      if (remoteUser) {
+        // Find matching participant info
+        const participant = participants.find(p => p.user_id === String(remoteUser.uid));
+        if (participant) {
+          return participant;
+        }
+        // If no participant info yet, create temporary one from remoteUser
+        return {
+          user_id: String(remoteUser.uid),
+          joined_at: new Date().toISOString()
+        };
       }
     }
 
-    console.log(`[ROOM] Slot ${slot.index}: Empty`);
     return null;
   };
 
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    const participant = getSlotParticipant(slot);
-    
-    // For slot 1, we need both a participant (user) and a video track
+    // For slot 1, check local video
     if (slot.index === 1) {
-      const hasParticipant = !!participant;
-      const hasVideo = !!videoTrack;
-      return !hasParticipant || !hasVideo;
+      return !user || !videoTrack;
     }
     
-    // For other slots, check if we have both:
-    // 1. A participant assigned to this slot
-    // 2. A matching remote user with a video track
-    if (!participant) {
-      return true;
-    }
-
-    const matchingRemoteUser = remoteUsers.find(u => String(u.uid) === participant.user_id);
-    if (!matchingRemoteUser) {
-      return true;
-    }
-
-    // Check if there's a video element in the slot
-    const container = document.getElementById(slot.id);
-    const videoElement = container?.querySelector('video');
-    const isPlaying = videoElement && 
-      !videoElement.paused && 
-      videoElement.currentTime > 0 && 
-      !videoElement.ended;
-
-    return !isPlaying;
+    // For other slots, check remote users
+    const remoteIndex = slot.index - 2;
+    const remoteUser = remoteUsers[remoteIndex];
+    
+    return !remoteUser || !remoteUser.videoTrack;
   };
 
   // Handle room exit
