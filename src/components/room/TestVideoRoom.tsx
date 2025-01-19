@@ -5,6 +5,7 @@ import { useRoomPresence } from '@/hooks/useRoomPresence';
 import { useUser } from '@/hooks/useUser';
 import { Icons } from '@/components/ui/icons';
 import { supabase } from '@/lib/supabase';
+import { useUserStats } from '@/hooks/useUserStats';
 
 // Define our video slots
 const VIDEO_SLOTS = [
@@ -15,21 +16,11 @@ const VIDEO_SLOTS = [
   { id: 'video-slot-5', index: 5 },
 ];
 
+// Use a fixed UUID for the test room
+const TEST_ROOM_ID = '123e4567-e89b-12d3-a456-426614174000';
+
 interface TestVideoRoomProps {
-  roomId: string;
-  participants: Array<{
-    user_id: string;
-    joined_at: string;
-    current_focus_task?: string;
-  }>;
-  profiles: Record<string, {
-    full_name: string;
-    avatar_url: string | null;
-    bio: string;
-  }>;
-  userStats: Record<string, {
-    total_focus_minutes: number;
-  }>;
+  roomId?: string; // Make optional since we'll use TEST_ROOM_ID by default
 }
 
 // Helper function to format minutes into hours
@@ -41,16 +32,126 @@ const formatHours = (minutes: number) => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
-export function TestVideoRoom({ roomId, participants, profiles, userStats }: TestVideoRoomProps) {
+export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
   const navigate = useNavigate();
   const { user } = useUser();
   const { videoTrack, remoteUsers, client, toggleVideo, toggleAudio } = useAgoraRoom(roomId, user?.id || '');
   const { error: presenceError } = useRoomPresence(roomId);
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, any>>({});
   const [activeVideoSlots, setActiveVideoSlots] = useState<Set<string>>(new Set());
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [currentTask, setCurrentTask] = useState('');
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
+
+  // Get user IDs for stats
+  const userIds = participants.map(p => p.user_id);
+  const { stats: userStats } = useUserStats(userIds);
+
+  // Fetch and subscribe to participants data
+  useEffect(() => {
+    // Fetch initial participants data
+    const fetchInitialData = async () => {
+      console.log('[ROOM] Fetching participants for room:', roomId);
+      const { data: initialParticipants, error } = await supabase
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId);
+
+      if (error) {
+        console.error('[ROOM] Error fetching participants:', error);
+        return;
+      }
+
+      if (initialParticipants) {
+        console.log('[ROOM] Initial participants:', initialParticipants);
+        setParticipants(initialParticipants);
+        
+        if (initialParticipants.length > 0) {
+          // Fetch profiles for initial participants
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, bio')
+            .in('id', initialParticipants.map(p => p.user_id));
+
+          if (profilesError) {
+            console.error('[ROOM] Error fetching profiles:', profilesError);
+            return;
+          }
+
+          if (profiles) {
+            console.log('[ROOM] Initial profiles:', profiles);
+            const profileMap = profiles.reduce((acc, profile) => ({
+              ...acc,
+              [profile.id]: profile
+            }), {});
+            setProfiles(profileMap);
+          }
+        }
+      }
+    };
+
+    fetchInitialData();
+
+    // Subscribe to room_participants changes
+    const subscription = supabase
+      .channel(`room_participants:${roomId}`)
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'room_participants',
+          filter: `room_id=eq.${roomId}`
+        }, 
+        async (payload) => {
+          console.log('[ROOM] Participant change:', payload);
+          
+          // Fetch updated participants
+          const { data: participants, error } = await supabase
+            .from('room_participants')
+            .select('*')
+            .eq('room_id', roomId);
+
+          if (error) {
+            console.error('[ROOM] Error fetching updated participants:', error);
+            return;
+          }
+
+          if (participants) {
+            console.log('[ROOM] Updated participants:', participants);
+            setParticipants(participants);
+            
+            if (participants.length > 0) {
+              // Fetch profiles for all participants
+              const { data: profiles, error: profilesError } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url, bio')
+                .in('id', participants.map(p => p.user_id));
+
+              if (profilesError) {
+                console.error('[ROOM] Error fetching updated profiles:', profilesError);
+                return;
+              }
+
+              if (profiles) {
+                console.log('[ROOM] Updated profiles:', profiles);
+                const profileMap = profiles.reduce((acc, profile) => ({
+                  ...acc,
+                  [profile.id]: profile
+                }), {});
+                setProfiles(profileMap);
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [roomId]);
 
   // Track video elements being added to slots
   useEffect(() => {

@@ -51,7 +51,7 @@ function App() {
 
                 {/* Add this to your routes */}
                 <Route path="/loading-test" element={<LoadingTest />} />
-                <Route path="/rooms/test/:roomId?" element={<TestRoom />} />
+                <Route path="/rooms/test" element={<TestVideoRoom />} />
               </Routes>
             </main>
             <Toaster />
