@@ -59,8 +59,24 @@ export function TestVideoRoom() {
 
   // Find user's assigned slot
   const getUserSlot = (userId: string) => {
+    // Current user is always in slot 1
+    if (userId === user?.id) {
+      return 1;
+    }
+    // For remote users, find their position in participants array
     const participantIndex = participants.findIndex(p => p.user_id === userId);
-    return participantIndex + 1; // 1-based slot numbers
+    // If not found, assign to next available slot starting from 2
+    return participantIndex === -1 ? 2 : participantIndex + 2;
+  };
+
+  // Empty slot check helper
+  const isSlotEmpty = (slot: { id: string; index: number }) => {
+    // Slot 1 is empty if no local user
+    if (slot.index === 1) {
+      return !participants.find(p => p.user_id === user?.id);
+    }
+    // Other slots are empty if no remote user is assigned
+    return !remoteUsers.find(u => `video-slot-${getUserSlot(String(u.uid))}` === slot.id);
   };
 
   // Handle room exit
@@ -158,25 +174,9 @@ export function TestVideoRoom() {
     }
   }, [videoTrack]);
 
-  // Play remote videos when tracks are available
+  // Log remote users updates without trying to play videos
   useEffect(() => {
     console.log("[UI] Remote users updated:", remoteUsers);
-    
-    remoteUsers.forEach(user => {
-      if (user.videoTrack) {
-        const container = document.querySelector(`[data-user-video="${user.uid}"]`) as HTMLElement;
-        if (container) {
-          try {
-            user.videoTrack.play(container);
-            console.log(`[UI] Playing remote video for user ${user.uid}`);
-          } catch (err) {
-            console.error(`[UI] Failed to play remote video for user ${user.uid}:`, err);
-          }
-        } else {
-          console.log(`[UI] Container not found for user ${user.uid}`);
-        }
-      }
-    });
   }, [remoteUsers]);
 
   // Main Grid rendering
@@ -285,7 +285,7 @@ export function TestVideoRoom() {
                       />
 
                       {/* Empty Slot Overlay */}
-                      {!participant && (
+                      {isSlotEmpty(slot) && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                           <div className="flex flex-col items-center">
                             <Icons.users className="w-6 h-6 text-white/40 mb-2" />

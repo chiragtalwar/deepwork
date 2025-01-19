@@ -19,11 +19,16 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
   // Helper to find a user's slot based on participant index
   const findUserSlot = (uid: string | number) => {
-    // Remote users start from slot 2 (slot 1 is for local user)
+    // Local user is always in slot 1
+    if (uid === userId) {
+      return 'video-slot-1';
+    }
+    
+    // For remote users, find their position in remoteUsers array
     const userIndex = remoteUsers.findIndex(u => u.uid === uid);
-    // If user not found in remoteUsers, they should go to slot 2 (first remote slot)
+    // If not found, assign to next available slot starting from 2
     const slotNumber = userIndex === -1 ? 2 : userIndex + 2;
-    console.log(`[AGORA] Finding slot for user ${uid}: index=${userIndex}, slot=${slotNumber}`);
+    console.log(`[AGORA] Finding slot for remote user ${uid}: index=${userIndex}, slot=${slotNumber}`);
     return `video-slot-${slotNumber}`;
   };
 
