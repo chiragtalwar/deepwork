@@ -28,6 +28,34 @@ export default function TestRoom() {
   const { stats: userStats } = useUserStats(userIds);
 
   useEffect(() => {
+    // Fetch initial participants data
+    const fetchInitialData = async () => {
+      const { data: initialParticipants } = await supabase
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId);
+
+      if (initialParticipants) {
+        setParticipants(initialParticipants);
+        
+        // Fetch profiles for initial participants
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .in('id', initialParticipants.map(p => p.user_id));
+
+        if (profiles) {
+          const profileMap = profiles.reduce((acc, profile) => ({
+            ...acc,
+            [profile.id]: profile
+          }), {});
+          setProfiles(profileMap);
+        }
+      }
+    };
+
+    fetchInitialData();
+
     // Subscribe to room_participants changes
     const subscription = supabase
       .channel(`room_participants:${roomId}`)
@@ -39,6 +67,8 @@ export default function TestRoom() {
           filter: `room_id=eq.${roomId}`
         }, 
         async (payload) => {
+          console.log('[ROOM] Participant change:', payload);
+          
           // Fetch updated participants
           const { data: participants } = await supabase
             .from('room_participants')
@@ -46,6 +76,7 @@ export default function TestRoom() {
             .eq('room_id', roomId);
 
           if (participants) {
+            console.log('[ROOM] Updated participants:', participants);
             setParticipants(participants);
             
             // Fetch profiles for all participants

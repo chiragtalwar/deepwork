@@ -122,16 +122,19 @@ export function TestVideoRoom({ roomId, participants, profiles, userStats }: Tes
 
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    // For slot 1, check local video
+    const participant = getSlotParticipant(slot);
+    
+    // For slot 1, check local video and user
     if (slot.index === 1) {
       return !user || !videoTrack;
     }
     
-    // For other slots, check remote users
+    // For other slots, check both participant data and video track
     const remoteIndex = slot.index - 2;
     const remoteUser = remoteUsers[remoteIndex];
     
-    return !remoteUser || !remoteUser.videoTrack;
+    // Show participant info if we have participant data, even if video isn't ready yet
+    return !participant || (!remoteUser && !participant);
   };
 
   // Handle room exit
@@ -277,21 +280,21 @@ export function TestVideoRoom({ roomId, participants, profiles, userStats }: Tes
                 const isCurrentUser = participant?.user_id === user?.id;
                 const profile = participant ? profiles[participant.user_id] : null;
                 const stats = participant ? userStats[participant.user_id] : null;
-                
-                return (
+                  
+                  return (
                   <div key={slot.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-                    <div className="aspect-video bg-black/40 relative">
+                      <div className="aspect-video bg-black/40 relative">
                       {/* Video Container */}
                       <div 
                         id={slot.id}
                         data-user={participant?.user_id}
-                        className="absolute inset-0" 
-                      />
+                          className="absolute inset-0" 
+                        />
 
                       {/* Empty Slot Overlay */}
                       {isSlotEmpty(slot) && (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="flex flex-col items-center">
+                            <div className="flex flex-col items-center">
                             <Icons.users className="w-8 h-8 text-white/20 mb-2" />
                             <p className="text-white/40 text-sm">Empty Seat</p>
                           </div>
@@ -344,7 +347,7 @@ export function TestVideoRoom({ roomId, participants, profiles, userStats }: Tes
                           </div>
                         </div>
                       )}
-                    </div>
+                        </div>
 
                     {/* Profile Info Section */}
                     <div className="p-4">
@@ -392,30 +395,30 @@ export function TestVideoRoom({ roomId, participants, profiles, userStats }: Tes
                                 </button>
                               </div>
                             ) : (
-                              <p className="text-white/90 text-sm">
-                                {participant.current_focus_task || 'Not specified'}
-                              </p>
+                            <p className="text-white/90 text-sm">
+                              {participant.current_focus_task || 'Not specified'}
+                            </p>
                             )}
                           </div>
                         </div>
                       ) : (
                         <>
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center border border-white/10">
-                              <Icons.user className="w-5 h-5 text-white/20" />
-                            </div>
-                            <div>
-                              <h3 className="text-white/40 font-medium">Available Spot</h3>
-                              <p className="text-white/30 text-sm">Waiting for participant...</p>
-                            </div>
-                          </div>
-                          <div className="bg-black/10 rounded-lg p-3">
-                            <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
-                          </div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                        <Icons.user className="w-5 h-5 text-white/20" />
+                      </div>
+                      <div>
+                        <h3 className="text-white/40 font-medium">Available Spot</h3>
+                        <p className="text-white/30 text-sm">Waiting for participant...</p>
+                      </div>
+                    </div>
+                    <div className="bg-black/10 rounded-lg p-3">
+                      <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
+                    </div>
                         </>
                       )}
-                    </div>
-                  </div>
+                </div>
+              </div>
                 );
               })}
             </div>
