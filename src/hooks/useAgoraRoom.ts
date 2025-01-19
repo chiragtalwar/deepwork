@@ -19,16 +19,19 @@ export function useAgoraRoom(roomId: string, userId: string) {
 
   // Helper to find a user's slot based on participant index
   const findUserSlot = (uid: string | number) => {
-    // Local user is always in slot 1
-    if (uid === userId) {
+    // Convert uid to string for consistent comparison
+    const uidStr = String(uid);
+    
+    // Current browser user always sees themselves in slot 1
+    if (uidStr === userId) {
+      console.log(`[AGORA] Current browser user ${uidStr} assigned to slot 1`);
       return 'video-slot-1';
     }
     
-    // For remote users, find their position in remoteUsers array
-    const userIndex = remoteUsers.findIndex(u => u.uid === uid);
-    // If not found, assign to next available slot starting from 2
-    const slotNumber = userIndex === -1 ? 2 : userIndex + 2;
-    console.log(`[AGORA] Finding slot for remote user ${uid}: index=${userIndex}, slot=${slotNumber}`);
+    // For other participants, assign slots 2-5 based on join order
+    const userIndex = remoteUsers.findIndex(u => String(u.uid) === uidStr);
+    const slotNumber = userIndex + 2; // +2 because slots 2-5 are for other participants
+    console.log(`[AGORA] Other participant ${uidStr} assigned to slot ${slotNumber} (index: ${userIndex})`);
     return `video-slot-${slotNumber}`;
   };
 
@@ -41,7 +44,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
       
       const container = document.getElementById(slotId);
       if (!container) {
-        console.log(`[AGORA] Container ${slotId} not found, will retry in 1s`);
+        console.log(`[AGORA] Container ${slotId} not found, will retry in 1s (attempt ${retries + 1}/${maxRetries})`);
         if (retries < maxRetries) {
           retries++;
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -56,7 +59,7 @@ export function useAgoraRoom(roomId: string, userId: string) {
         await videoTrack.play(container);
         console.log(`[AGORA] Successfully played video in slot ${slotId} for user ${uid}`);
       } catch (err) {
-        console.error(`[AGORA] Error playing video:`, err);
+        console.error(`[AGORA] Error playing video in slot ${slotId}:`, err);
         if (retries < maxRetries) {
           retries++;
           await new Promise(resolve => setTimeout(resolve, 1000));

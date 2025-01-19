@@ -59,24 +59,49 @@ export function TestVideoRoom() {
 
   // Find user's assigned slot
   const getUserSlot = (userId: string) => {
-    // Current user is always in slot 1
+    // Every user sees themselves in slot 1 in their own browser
     if (userId === user?.id) {
       return 1;
     }
-    // For remote users, find their position in participants array
-    const participantIndex = participants.findIndex(p => p.user_id === userId);
-    // If not found, assign to next available slot starting from 2
-    return participantIndex === -1 ? 2 : participantIndex + 2;
+    
+    // Other participants get slots 2-5 based on join order
+    const otherParticipants = participants
+      .filter(p => p.user_id !== user?.id)
+      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+    
+    const participantIndex = otherParticipants.findIndex(p => p.user_id === userId);
+    return participantIndex + 2; // +2 because slots 2-5 are for other participants
   };
 
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    // Slot 1 is empty if no local user
     if (slot.index === 1) {
-      return !participants.find(p => p.user_id === user?.id);
+      // Slot 1 is only empty if there's no current user
+      return !user?.id;
     }
-    // Other slots are empty if no remote user is assigned
-    return !remoteUsers.find(u => `video-slot-${getUserSlot(String(u.uid))}` === slot.id);
+    
+    // For slots 2-5, check if there's another participant assigned to this slot
+    const otherParticipants = participants
+      .filter(p => p.user_id !== user?.id)
+      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+    
+    const slotUser = otherParticipants[slot.index - 2]; // -2 because slots 2-5 are for others
+    return !slotUser;
+  };
+
+  // Get participant for a slot
+  const getSlotParticipant = (slot: { id: string; index: number }) => {
+    if (slot.index === 1) {
+      // Slot 1 always shows current user
+      return participants.find(p => p.user_id === user?.id);
+    }
+
+    // For other slots, find participant based on join order
+    const otherParticipants = participants
+      .filter(p => p.user_id !== user?.id)
+      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+    
+    return otherParticipants[slot.index - 2];
   };
 
   // Handle room exit
@@ -255,24 +280,24 @@ export function TestVideoRoom() {
           <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
               {VIDEO_SLOTS.map((slot) => {
-                // Find participant for this slot (if any)
-                const participant = participants[slot.index - 1];
+                const participant = getSlotParticipant(slot);
                 const isCurrentUser = participant?.user_id === user?.id;
                 const profile = participant ? profiles[participant.user_id] : null;
-                const remoteUser = participant ? remoteUsers.find(u => u.uid === participant.user_id) : null;
+                const remoteUser = participant && !isCurrentUser 
+                  ? remoteUsers.find(u => String(u.uid) === participant.user_id)
+                  : null;
 
                 return (
                   <div key={slot.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
                     <div className="aspect-video bg-black/40 relative">
-                      {/* Video Container - Always Present */}
+                      {/* Video Container */}
                       <div 
                         id={slot.id}
                         className="absolute inset-0"
                         ref={el => {
-                          // Only set up local video in slot 1 if this is the current user
-                          if (slot.index === 1 && isCurrentUser && el && videoTrack) {
+                          // Only set up local video in slot 1
+                          if (slot.index === 1 && el && videoTrack) {
                             console.log(`[UI] Setting up local video in slot 1`);
-                            // Clear the container first
                             el.innerHTML = '';
                             try {
                               videoTrack.play(el);
