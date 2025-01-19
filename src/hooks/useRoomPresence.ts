@@ -1,63 +1,68 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useUser } from './useUser';
-
-interface RoomPresence {
-  isConnected: boolean;
-  error: string | null;
-}
+import { supabase } from '@/lib/supabase';
 
 export function useRoomPresence(roomId: string) {
   const { user } = useUser();
-  const [presence, setPresence] = useState<RoomPresence>({
-    isConnected: false,
-    error: null
-  });
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id || !roomId) return;
 
-    const setupPresence = async () => {
+    const addUserToRoom = async () => {
       try {
-        // Add user to room_participants
+        console.log('[PRESENCE] Adding user to room:', { userId: user.id, roomId });
+        
         const { error: insertError } = await supabase
           .from('room_participants')
-          .insert([
-            {
-              room_id: roomId,
-              user_id: user.id,
-              joined_at: new Date().toISOString()
-            }
-          ]);
+          .upsert({
+            room_id: roomId,
+            user_id: user.id,
+            joined_at: new Date().toISOString()
+          });
 
-        if (insertError) throw insertError;
-        setPresence({ isConnected: true, error: null });
+        if (insertError) {
+          console.error('[PRESENCE] Error adding user to room:', insertError);
+          setError('Failed to join room');
+          return;
+        }
 
+        console.log('[PRESENCE] Successfully added user to room');
       } catch (err) {
-        console.error('Error setting up room presence:', err);
-        setPresence({ isConnected: false, error: 'Failed to join room' });
+        console.error('[PRESENCE] Error in addUserToRoom:', err);
+        setError('Failed to join room');
       }
     };
 
-    setupPresence();
+    addUserToRoom();
 
-    // Cleanup: Remove user from room_participants
+    // Cleanup: Remove user from room when they leave
     return () => {
-      const cleanup = async () => {
+      const removeUserFromRoom = async () => {
         try {
+          console.log('[PRESENCE] Removing user from room:', { userId: user.id, roomId });
+          
           const { error: deleteError } = await supabase
             .from('room_participants')
             .delete()
-            .match({ room_id: roomId, user_id: user.id });
+            .match({
+              room_id: roomId,
+              user_id: user.id
+            });
 
-          if (deleteError) throw deleteError;
+          if (deleteError) {
+            console.error('[PRESENCE] Error removing user from room:', deleteError);
+          } else {
+            console.log('[PRESENCE] Successfully removed user from room');
+          }
         } catch (err) {
-          console.error('Error cleaning up room presence:', err);
+          console.error('[PRESENCE] Error in removeUserFromRoom:', err);
         }
       };
-      cleanup();
+
+      removeUserFromRoom();
     };
   }, [roomId, user?.id]);
 
-  return presence;
+  return { error };
 }

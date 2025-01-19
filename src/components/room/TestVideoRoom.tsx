@@ -30,6 +30,20 @@ export function TestVideoRoom({ roomId, participants, profiles }: TestVideoRoomP
   const navigate = useNavigate();
   const { user } = useUser();
   const { videoTrack, remoteUsers } = useAgoraRoom(roomId, user?.id || '');
+  const { error: presenceError } = useRoomPresence(roomId);
+
+  // Log presence error if any
+  useEffect(() => {
+    if (presenceError) {
+      console.error('[ROOM] Presence error:', presenceError);
+    }
+  }, [presenceError]);
+
+  // Log participants and remoteUsers for debugging
+  useEffect(() => {
+    console.log('[ROOM] Current participants:', participants);
+    console.log('[ROOM] Remote users:', remoteUsers);
+  }, [participants, remoteUsers]);
 
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {

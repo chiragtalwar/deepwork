@@ -21,25 +21,41 @@ export default function TestRoom() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Get participants
-      const { data: participantsData } = await supabase
-        .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId);
-      
-      setParticipants(participantsData || []);
-
-      // Get profiles
-      if (participantsData?.length) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
+      try {
+        // Get participants
+        const { data: participantsData, error: participantsError } = await supabase
+          .from('room_participants')
           .select('*')
-          .in('id', participantsData.map(p => p.user_id));
+          .eq('room_id', roomId);
         
-        const profilesMap = Object.fromEntries(
-          (profilesData || []).map(p => [p.id, p])
-        );
-        setProfiles(profilesMap);
+        if (participantsError) {
+          console.error('[ROOM] Error fetching participants:', participantsError);
+          return;
+        }
+        
+        console.log('[ROOM] Fetched participants:', participantsData);
+        setParticipants(participantsData || []);
+
+        // Get profiles
+        if (participantsData?.length) {
+          const { data: profilesData, error: profilesError } = await supabase
+            .from('profiles')
+            .select('*')
+            .in('id', participantsData.map(p => p.user_id));
+          
+          if (profilesError) {
+            console.error('[ROOM] Error fetching profiles:', profilesError);
+            return;
+          }
+
+          console.log('[ROOM] Fetched profiles:', profilesData);
+          const profilesMap = Object.fromEntries(
+            (profilesData || []).map(p => [p.id, p])
+          );
+          setProfiles(profilesMap);
+        }
+      } catch (err) {
+        console.error('[ROOM] Error in fetchData:', err);
       }
     };
 
@@ -47,8 +63,13 @@ export default function TestRoom() {
     
     // Subscribe to changes
     const participantsSubscription = supabase
-      .channel('room_participants')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_participants' }, fetchData)
+      .channel(`room_participants:${roomId}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'room_participants',
+        filter: `room_id=eq.${roomId}`
+      }, fetchData)
       .subscribe();
 
     return () => {
