@@ -233,113 +233,159 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
     console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
-      participants,
-      remoteUsers,
-      user
+      participants: participants.length,
+      remoteUsers: remoteUsers.length,
+      profiles: Object.keys(profiles).length
     });
 
     // Slot 1 is always for the current user
     if (slot.index === 1) {
       if (!user) return null;
-      // Try to find in participants array first
       const participant = participants.find(p => p.user_id === user.id);
       if (participant) return participant;
-      // If not found, create temporary one
       return { user_id: user.id, joined_at: new Date().toISOString() };
     }
 
-    // For slots 2-5, check remote users first
+    // For slots 2-5, check remote users
     if (slot.index >= 2 && slot.index <= 5) {
       const remoteIndex = slot.index - 2;
       const remoteUser = remoteUsers[remoteIndex];
       
       if (remoteUser) {
         const uid = String(remoteUser.uid);
-        console.log(`[ROOM] Finding participant for remote user:`, uid);
+        console.log(`[ROOM] Processing remote user for slot ${slot.index}:`, uid);
         
-        // Try to find in participants array first
+        // First check participants array
         const participant = participants.find(p => p.user_id === uid);
         if (participant) {
-          console.log(`[ROOM] Found participant in array:`, participant);
+          console.log(`[ROOM] Found participant in array for ${uid}`);
           return participant;
         }
 
-        // If we don't have the participant data yet, trigger a refetch
-        if (participants.length === 0) {
-          console.log(`[ROOM] No participants data yet, triggering refetch for:`, uid);
-          // Use setTimeout to avoid infinite loops
-          setTimeout(async () => {
-            try {
-              const { data: currentParticipants, error } = await supabase
-                .from('room_participants')
-                .select('*')
-                .eq('room_id', roomId);
-
-              if (error) {
-                console.error('[ROOM] Error fetching participants:', error);
-                return;
-              }
-
-              if (currentParticipants) {
-                console.log('[ROOM] Refetched participants:', currentParticipants);
-                setParticipants(currentParticipants);
-
-                // Also fetch profile if needed
-                if (!profiles[uid]) {
-                  const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('id, full_name, avatar_url, bio')
-                    .eq('id', uid)
-                    .single();
-
-                  if (!profileError && profile) {
-                    console.log('[ROOM] Fetched profile for:', uid);
-                    setProfiles(prev => ({
-                      ...prev,
-                      [uid]: profile
-                    }));
-                  }
-                }
-              }
-            } catch (error) {
-              console.error('[ROOM] Error in refetch:', error);
-            }
-          }, 0);
-        }
-        
-        // Return a temporary participant only if we have their profile
-        if (profiles[uid]) {
-          console.log(`[ROOM] Creating temporary participant with profile for:`, uid);
-          return {
-            user_id: uid,
-            joined_at: new Date().toISOString()
-          };
+        // If we don't have participant data, trigger a fetch
+        if (!participant) {
+          console.log(`[ROOM] No participant data for ${uid}, triggering fetch`);
+          fetchParticipantData(uid);
         }
 
-        // Don't create a basic temporary participant anymore
-        // This ensures we wait for actual data
-        return null;
+        // Return temporary participant
+        return {
+          user_id: uid,
+          joined_at: new Date().toISOString()
+        };
       }
     }
 
     return null;
   };
 
+  // Function to fetch participant data
+  const fetchParticipantData = async (userId: string) => {
+    console.log(`[ROOM] Fetching data for user:`, userId);
+    
+    try {
+      // Fetch participant data
+      const { data: participantData, error: participantError } = await supabase
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .single();
+
+      if (participantError) {
+        console.error('[ROOM] Error fetching participant:', participantError);
+      } else if (participantData) {
+        console.log('[ROOM] Got participant data:', participantData);
+        setParticipants(prev => {
+          const exists = prev.some(p => p.user_id === userId);
+          if (exists) return prev;
+          return [...prev, participantData];
+        });
+      }
+
+      // Always fetch profile data
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, bio')
+        .eq('id', userId)
+        .single();
+
+      if (profileError) {
+        console.error('[ROOM] Error fetching profile:', profileError);
+      } else if (profileData) {
+        console.log('[ROOM] Got profile data:', profileData);
+        setProfiles(prev => ({
+          ...prev,
+          [userId]: profileData
+        }));
+      }
+    } catch (error) {
+      console.error('[ROOM] Error in fetchParticipantData:', error);
+    }
+  };
+
+  // Effect to fetch data for remote users
+  useEffect(() => {
+    remoteUsers.forEach(user => {
+      const uid = String(user.uid);
+      if (!profiles[uid]) {
+        console.log(`[ROOM] Remote user needs data:`, uid);
+        fetchParticipantData(uid);
+      }
+    });
+  }, [remoteUsers]);
+
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    const participant = getSlotParticipant(slot);
-    
     // For slot 1, check local video and user
     if (slot.index === 1) {
       return !user || !videoTrack;
     }
     
-    // For other slots, check if we have a remote user
+    // For other slots, only check for remote user presence
     const remoteIndex = slot.index - 2;
     const remoteUser = remoteUsers[remoteIndex];
-    
-    return !remoteUser; // Only check for remote user presence
+    return !remoteUser;
   };
+
+  // Fetch profiles whenever participants change
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      const participantIds = participants.map(p => p.user_id);
+      const remoteIds = remoteUsers.map(u => String(u.uid));
+      const allIds = [...new Set([...participantIds, ...remoteIds])];
+
+      if (allIds.length === 0) return;
+
+      try {
+        const { data: newProfiles, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .in('id', allIds);
+
+        if (error) {
+          console.error('[ROOM] Error fetching profiles:', error);
+          return;
+        }
+
+        if (newProfiles) {
+          const profileMap = newProfiles.reduce((acc, profile) => ({
+            ...acc,
+            [profile.id]: profile
+          }), {});
+
+          setProfiles(prev => ({
+            ...prev,
+            ...profileMap
+          }));
+        }
+      } catch (error) {
+        console.error('[ROOM] Error in fetchProfiles:', error);
+      }
+    };
+
+    fetchProfiles();
+  }, [participants, remoteUsers]);
 
   // Handle room exit
   const handleLeaveRoom = async () => {

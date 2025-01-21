@@ -2,40 +2,67 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export function useUserStats(userIds: string[]) {
-  const [stats, setStats] = useState<Record<string, { total_focus_minutes: number }>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<Record<string, any>>({});
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
       if (!userIds.length) return;
 
       try {
-        const { data, error: fetchError } = await supabase
+        // First check if the column exists
+        const { data: columns, error: columnError } = await supabase
+          .from('user_stats')
+          .select()
+          .limit(1);
+
+        // If table/column doesn't exist, return default values
+        if (columnError) {
+          console.log('[STATS] Stats table not ready, using defaults');
+          const defaultStats = userIds.reduce((acc, id) => ({
+            ...acc,
+            [id]: { total_focus_minutes: 0 }
+          }), {});
+          setStats(defaultStats);
+          return;
+        }
+
+        // If table exists, fetch actual stats
+        const { data, error } = await supabase
           .from('user_stats')
           .select('user_id, total_focus_minutes')
           .in('user_id', userIds);
 
-        if (fetchError) throw fetchError;
+        if (error) throw error;
 
-        const statsMap = data?.reduce((acc, stat) => ({
+        // Convert array to record and fill in missing users with 0
+        const statsMap = (data || []).reduce((acc, stat) => ({
           ...acc,
-          [stat.user_id]: {
-            total_focus_minutes: stat.total_focus_minutes || 0
-          }
+          [stat.user_id]: stat
         }), {});
 
-        setStats(statsMap || {});
+        // Ensure all requested users have stats
+        const fullStats = userIds.reduce((acc, id) => ({
+          ...acc,
+          [id]: statsMap[id] || { total_focus_minutes: 0 }
+        }), {});
+
+        setStats(fullStats);
       } catch (err) {
-        console.error('[STATS] Error fetching user stats:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch user stats');
-      } finally {
-        setLoading(false);
+        console.error('[STATS] Error fetching stats:', err);
+        setError(err as Error);
+        
+        // Still provide default values on error
+        const defaultStats = userIds.reduce((acc, id) => ({
+          ...acc,
+          [id]: { total_focus_minutes: 0 }
+        }), {});
+        setStats(defaultStats);
       }
     };
 
     fetchStats();
-  }, [userIds.join(',')]);
+  }, [userIds]);
 
-  return { stats, loading, error };
+  return { stats, error };
 } 
