@@ -131,51 +131,53 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
         { 
           event: '*', 
           schema: 'public', 
-          table: 'room_participants',
-          filter: `room_id=eq.${roomId}`
+          table: 'room_participants'
         }, 
         async (payload) => {
           console.log('[ROOM] Participant change payload:', payload);
           
           try {
-            // For INSERT events, immediately fetch the new participant's profile
-            if (payload.eventType === 'INSERT') {
-              const newParticipant = payload.new;
-              console.log('[ROOM] New participant joined:', newParticipant);
-              
-              // Update participants state immediately
-              setParticipants(prev => [...prev, newParticipant]);
-              
-              // Fetch profile for new participant
-              const { data: profile, error: profileError } = await supabase
-                .from('profiles')
-                .select('id, full_name, avatar_url, bio')
-                .eq('id', newParticipant.user_id)
-                .single();
-                
-              if (profileError) {
-                console.error('[ROOM] Error fetching new participant profile:', profileError);
-              } else if (profile) {
-                console.log('[ROOM] New participant profile:', profile);
-                setProfiles(prev => ({
-                  ...prev,
-                  [profile.id]: profile
-                }));
-              }
-            } 
-            // For DELETE events, remove the participant
-            else if (payload.eventType === 'DELETE') {
-              const deletedParticipant = payload.old;
-              console.log('[ROOM] Participant left:', deletedParticipant);
-              setParticipants(prev => prev.filter(p => p.user_id !== deletedParticipant.user_id));
+            // Always fetch current participants after any change
+            const { data: currentParticipants, error: participantsError } = await supabase
+              .from('room_participants')
+              .select('*')
+              .eq('room_id', roomId);
+
+            if (participantsError) {
+              console.error('[ROOM] Error fetching current participants:', participantsError);
+              return;
             }
-            // For UPDATE events, update the participant
-            else if (payload.eventType === 'UPDATE') {
-              const updatedParticipant = payload.new;
-              console.log('[ROOM] Participant updated:', updatedParticipant);
-              setParticipants(prev => prev.map(p => 
-                p.user_id === updatedParticipant.user_id ? updatedParticipant : p
-              ));
+
+            console.log('[ROOM] Current participants:', currentParticipants);
+            if (currentParticipants) {
+              setParticipants(currentParticipants);
+              
+              // Fetch any missing profiles
+              const missingProfileIds = currentParticipants
+                .map(p => p.user_id)
+                .filter(id => !profiles[id]);
+
+              if (missingProfileIds.length > 0) {
+                console.log('[ROOM] Fetching missing profiles for:', missingProfileIds);
+                const { data: newProfiles, error: profilesError } = await supabase
+                  .from('profiles')
+                  .select('id, full_name, avatar_url, bio')
+                  .in('id', missingProfileIds);
+
+                if (profilesError) {
+                  console.error('[ROOM] Error fetching profiles:', profilesError);
+                } else if (newProfiles) {
+                  console.log('[ROOM] Adding new profiles:', newProfiles);
+                  const profileMap = newProfiles.reduce((acc, profile) => ({
+                    ...acc,
+                    [profile.id]: profile
+                  }), {});
+                  setProfiles(prev => ({
+                    ...prev,
+                    ...profileMap
+                  }));
+                }
+              }
             }
           } catch (error) {
             console.error('[ROOM] Error handling participant change:', error);
