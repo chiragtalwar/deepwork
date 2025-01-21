@@ -55,45 +55,50 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     const fetchInitialData = async () => {
       console.log('[ROOM] Fetching participants for room:', roomId);
       
-      // First, always fetch current user's profile
-      if (user?.id) {
-        const { data: currentUserProfile, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, bio')
-          .eq('id', user.id)
-          .single();
+      try {
+        // First, always fetch current user's profile
+        if (user?.id) {
+          const { data: currentUserProfile, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, bio')
+            .eq('id', user.id)
+            .single();
 
-        if (profileError) {
-          console.error('[ROOM] Error fetching current user profile:', profileError);
-        } else if (currentUserProfile) {
-          console.log('[ROOM] Current user profile:', currentUserProfile);
-          setProfiles(prev => ({
-            ...prev,
-            [user.id]: currentUserProfile
-          }));
+          if (profileError) {
+            console.error('[ROOM] Error fetching current user profile:', profileError);
+          } else if (currentUserProfile) {
+            console.log('[ROOM] Current user profile:', currentUserProfile);
+            setProfiles(prev => ({
+              ...prev,
+              [user.id]: currentUserProfile
+            }));
+          }
         }
-      }
 
-      const { data: initialParticipants, error } = await supabase
-        .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId);
+        // Fetch all participants for this room
+        const { data: initialParticipants, error: participantsError } = await supabase
+          .from('room_participants')
+          .select('*')
+          .eq('room_id', roomId);
 
-      if (error) {
-        console.error('[ROOM] Error fetching participants:', error);
-        return;
-      }
+        if (participantsError) {
+          console.error('[ROOM] Error fetching participants:', participantsError);
+          return;
+        }
 
-      if (initialParticipants) {
-        console.log('[ROOM] Initial participants:', initialParticipants);
-        setParticipants(initialParticipants);
+        console.log('[ROOM] Raw initial participants:', initialParticipants);
         
-        if (initialParticipants.length > 0) {
-          // Fetch profiles for initial participants
+        if (initialParticipants && initialParticipants.length > 0) {
+          setParticipants(initialParticipants);
+          
+          // Fetch profiles for all participants
+          const participantIds = initialParticipants.map(p => p.user_id);
+          console.log('[ROOM] Fetching profiles for participants:', participantIds);
+          
           const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
             .select('id, full_name, avatar_url, bio')
-            .in('id', initialParticipants.map(p => p.user_id));
+            .in('id', participantIds);
 
           if (profilesError) {
             console.error('[ROOM] Error fetching profiles:', profilesError);
@@ -112,6 +117,8 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
             }));
           }
         }
+      } catch (error) {
+        console.error('[ROOM] Unexpected error in fetchInitialData:', error);
       }
     };
 
@@ -128,29 +135,33 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           filter: `room_id=eq.${roomId}`
         }, 
         async (payload) => {
-          console.log('[ROOM] Participant change:', payload);
+          console.log('[ROOM] Participant change payload:', payload);
           
-          // Fetch updated participants
-          const { data: participants, error } = await supabase
-            .from('room_participants')
-            .select('*')
-            .eq('room_id', roomId);
+          try {
+            // Fetch updated participants
+            const { data: updatedParticipants, error: participantsError } = await supabase
+              .from('room_participants')
+              .select('*')
+              .eq('room_id', roomId);
 
-          if (error) {
-            console.error('[ROOM] Error fetching updated participants:', error);
-            return;
-          }
+            if (participantsError) {
+              console.error('[ROOM] Error fetching updated participants:', participantsError);
+              return;
+            }
 
-          if (participants) {
-            console.log('[ROOM] Updated participants:', participants);
-            setParticipants(participants);
+            console.log('[ROOM] Raw updated participants:', updatedParticipants);
             
-            if (participants.length > 0) {
+            if (updatedParticipants && updatedParticipants.length > 0) {
+              setParticipants(updatedParticipants);
+              
               // Fetch profiles for all participants
+              const participantIds = updatedParticipants.map(p => p.user_id);
+              console.log('[ROOM] Fetching profiles for updated participants:', participantIds);
+              
               const { data: profiles, error: profilesError } = await supabase
                 .from('profiles')
                 .select('id, full_name, avatar_url, bio')
-                .in('id', participants.map(p => p.user_id));
+                .in('id', participantIds);
 
               if (profilesError) {
                 console.error('[ROOM] Error fetching updated profiles:', profilesError);
@@ -169,6 +180,8 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
                 }));
               }
             }
+          } catch (error) {
+            console.error('[ROOM] Unexpected error in subscription handler:', error);
           }
         }
       )
@@ -177,7 +190,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [roomId]);
+  }, [roomId, user?.id]);
 
   // Track video elements being added to slots
   useEffect(() => {
@@ -220,9 +233,20 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
 
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
+    console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
+      participants,
+      remoteUsers,
+      user
+    });
+
     // Slot 1 is always for the current user
     if (slot.index === 1) {
-      return user ? { user_id: user.id, joined_at: new Date().toISOString() } : null;
+      if (!user) return null;
+      // Try to find in participants array first
+      const participant = participants.find(p => p.user_id === user.id);
+      if (participant) return participant;
+      // If not found, create temporary one
+      return { user_id: user.id, joined_at: new Date().toISOString() };
     }
 
     // For slots 2-5, check remote users first
@@ -231,18 +255,29 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       const remoteUser = remoteUsers[remoteIndex];
       
       if (remoteUser) {
-        console.log(`[ROOM] Finding participant for remote user:`, remoteUser.uid);
+        const uid = String(remoteUser.uid);
+        console.log(`[ROOM] Finding participant for remote user:`, uid);
+        
         // Try to find in participants array first
-        const participant = participants.find(p => p.user_id === String(remoteUser.uid));
+        const participant = participants.find(p => p.user_id === uid);
         if (participant) {
-          console.log(`[ROOM] Found participant:`, participant);
+          console.log(`[ROOM] Found participant in array:`, participant);
           return participant;
         }
         
-        // If not in participants, create a temporary one
-        console.log(`[ROOM] Creating temporary participant for:`, remoteUser.uid);
+        // If not in participants but we have their profile, create temporary one
+        if (profiles[uid]) {
+          console.log(`[ROOM] Creating temporary participant with profile for:`, uid);
+          return {
+            user_id: uid,
+            joined_at: new Date().toISOString()
+          };
+        }
+
+        // Last resort: create temporary participant
+        console.log(`[ROOM] Creating basic temporary participant for:`, uid);
         return {
-          user_id: String(remoteUser.uid),
+          user_id: uid,
           joined_at: new Date().toISOString()
         };
       }
