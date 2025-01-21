@@ -54,6 +54,26 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     // Fetch initial participants data
     const fetchInitialData = async () => {
       console.log('[ROOM] Fetching participants for room:', roomId);
+      
+      // First, always fetch current user's profile
+      if (user?.id) {
+        const { data: currentUserProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('[ROOM] Error fetching current user profile:', profileError);
+        } else if (currentUserProfile) {
+          console.log('[ROOM] Current user profile:', currentUserProfile);
+          setProfiles(prev => ({
+            ...prev,
+            [user.id]: currentUserProfile
+          }));
+        }
+      }
+
       const { data: initialParticipants, error } = await supabase
         .from('room_participants')
         .select('*')
@@ -86,7 +106,10 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
               ...acc,
               [profile.id]: profile
             }), {});
-            setProfiles(profileMap);
+            setProfiles(prev => ({
+              ...prev,
+              ...profileMap
+            }));
           }
         }
       }
