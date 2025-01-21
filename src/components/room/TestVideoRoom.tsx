@@ -263,8 +263,51 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           console.log(`[ROOM] Found participant in array:`, participant);
           return participant;
         }
+
+        // If we don't have the participant data yet, trigger a refetch
+        if (participants.length === 0) {
+          console.log(`[ROOM] No participants data yet, triggering refetch for:`, uid);
+          // Use setTimeout to avoid infinite loops
+          setTimeout(async () => {
+            try {
+              const { data: currentParticipants, error } = await supabase
+                .from('room_participants')
+                .select('*')
+                .eq('room_id', roomId);
+
+              if (error) {
+                console.error('[ROOM] Error fetching participants:', error);
+                return;
+              }
+
+              if (currentParticipants) {
+                console.log('[ROOM] Refetched participants:', currentParticipants);
+                setParticipants(currentParticipants);
+
+                // Also fetch profile if needed
+                if (!profiles[uid]) {
+                  const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, avatar_url, bio')
+                    .eq('id', uid)
+                    .single();
+
+                  if (!profileError && profile) {
+                    console.log('[ROOM] Fetched profile for:', uid);
+                    setProfiles(prev => ({
+                      ...prev,
+                      [uid]: profile
+                    }));
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('[ROOM] Error in refetch:', error);
+            }
+          }, 0);
+        }
         
-        // If not in participants but we have their profile, create temporary one
+        // Return a temporary participant only if we have their profile
         if (profiles[uid]) {
           console.log(`[ROOM] Creating temporary participant with profile for:`, uid);
           return {
@@ -273,12 +316,9 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           };
         }
 
-        // Last resort: create temporary participant
-        console.log(`[ROOM] Creating basic temporary participant for:`, uid);
-        return {
-          user_id: uid,
-          joined_at: new Date().toISOString()
-        };
+        // Don't create a basic temporary participant anymore
+        // This ensures we wait for actual data
+        return null;
       }
     }
 
