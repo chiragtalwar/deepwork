@@ -6,6 +6,7 @@ import { useUser } from '@/hooks/useUser';
 import { Icons } from '@/components/ui/icons';
 import { supabase } from '@/lib/supabase';
 import { useUserStats } from '@/hooks/useUserStats';
+import React from 'react';
 
 // Define our video slots
 const VIDEO_SLOTS = [
@@ -232,12 +233,6 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
 
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
-    console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
-      participants: participants.length,
-      remoteUsers: remoteUsers.length,
-      profiles: Object.keys(profiles).length
-    });
-
     // Slot 1 is always for the current user
     if (slot.index === 1) {
       if (!user) return null;
@@ -253,20 +248,9 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       
       if (remoteUser) {
         const uid = String(remoteUser.uid);
-        console.log(`[ROOM] Processing remote user for slot ${slot.index}:`, uid);
-        
         // First check participants array
         const participant = participants.find(p => p.user_id === uid);
-        if (participant) {
-          console.log(`[ROOM] Found participant in array for ${uid}`);
-          return participant;
-        }
-
-        // If we don't have participant data, trigger a fetch
-        if (!participant) {
-          console.log(`[ROOM] No participant data for ${uid}, triggering fetch`);
-          fetchParticipantData(uid);
-        }
+        if (participant) return participant;
 
         // Return temporary participant
         return {
@@ -279,70 +263,42 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     return null;
   };
 
-  // Function to fetch participant data
-  const fetchParticipantData = async (userId: string) => {
-    console.log(`[ROOM] Fetching data for user:`, userId);
-    
-    try {
-      // Fetch participant data
-      const { data: participantData, error: participantError } = await supabase
-        .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId)
-        .eq('user_id', userId)
-        .single();
+  // Function to fetch participant data - memoized to prevent recreating on every render
+  const fetchParticipantData = React.useCallback(async (userId: string) => {
+    if (!profiles[userId]) {
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .eq('id', userId)
+          .single();
 
-      if (participantError) {
-        console.error('[ROOM] Error fetching participant:', participantError);
-      } else if (participantData) {
-        console.log('[ROOM] Got participant data:', participantData);
-        setParticipants(prev => {
-          const exists = prev.some(p => p.user_id === userId);
-          if (exists) return prev;
-          return [...prev, participantData];
-        });
+        if (!profileError && profileData) {
+          setProfiles(prev => ({
+            ...prev,
+            [userId]: profileData
+          }));
+        }
+      } catch (error) {
+        console.error('[ROOM] Error fetching profile:', error);
       }
-
-      // Always fetch profile data
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url, bio')
-        .eq('id', userId)
-        .single();
-
-      if (profileError) {
-        console.error('[ROOM] Error fetching profile:', profileError);
-      } else if (profileData) {
-        console.log('[ROOM] Got profile data:', profileData);
-        setProfiles(prev => ({
-          ...prev,
-          [userId]: profileData
-        }));
-      }
-    } catch (error) {
-      console.error('[ROOM] Error in fetchParticipantData:', error);
     }
-  };
+  }, [profiles]);
 
-  // Effect to fetch data for remote users
+  // Effect to fetch profiles for remote users - with proper dependencies
   useEffect(() => {
-    remoteUsers.forEach(user => {
-      const uid = String(user.uid);
-      if (!profiles[uid]) {
-        console.log(`[ROOM] Remote user needs data:`, uid);
-        fetchParticipantData(uid);
-      }
-    });
-  }, [remoteUsers]);
+    const newUserIds = remoteUsers
+      .map(u => String(u.uid))
+      .filter(uid => !profiles[uid]);
+
+    if (newUserIds.length > 0) {
+      newUserIds.forEach(uid => fetchParticipantData(uid));
+    }
+  }, [remoteUsers, profiles, fetchParticipantData]);
 
   // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
-    // For slot 1, check local video and user
-    if (slot.index === 1) {
-      return !user || !videoTrack;
-    }
-    
-    // For other slots, only check for remote user presence
+    if (slot.index === 1) return !user || !videoTrack;
     const remoteIndex = slot.index - 2;
     const remoteUser = remoteUsers[remoteIndex];
     return !remoteUser;
