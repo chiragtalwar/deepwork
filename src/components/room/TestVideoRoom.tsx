@@ -615,7 +615,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
                           <div className="bg-black/20 rounded-lg p-3">
                             <p className="text-white/60 text-xs font-medium mb-1">Total Deep Work</p>
                             <p className="text-white/90 text-sm">
-                              {stats ? formatHours(stats.total_focus_minutes) : '0h'} of focused work
+                              {stats ? formatHours(stats.weekly_focus_minutes) : '0h'} of focused work
                             </p>
                           </div>
 

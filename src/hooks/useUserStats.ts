@@ -21,7 +21,7 @@ export function useUserStats(userIds: string[]) {
           console.log('[STATS] Stats table not ready, using defaults');
           const defaultStats = userIds.reduce((acc, id) => ({
             ...acc,
-            [id]: { total_focus_minutes: 0 }
+            [id]: { weekly_focus_minutes: 0 }
           }), {});
           setStats(defaultStats);
           return;
@@ -30,7 +30,7 @@ export function useUserStats(userIds: string[]) {
         // If table exists, fetch actual stats
         const { data, error } = await supabase
           .from('user_stats')
-          .select('user_id, total_focus_minutes')
+          .select('user_id, weekly_focus_minutes')
           .in('user_id', userIds);
 
         if (error) throw error;
@@ -44,7 +44,7 @@ export function useUserStats(userIds: string[]) {
         // Ensure all requested users have stats
         const fullStats = userIds.reduce((acc, id) => ({
           ...acc,
-          [id]: statsMap[id] || { total_focus_minutes: 0 }
+          [id]: statsMap[id] || { weekly_focus_minutes: 0 }
         }), {});
 
         setStats(fullStats);
@@ -55,7 +55,7 @@ export function useUserStats(userIds: string[]) {
         // Still provide default values on error
         const defaultStats = userIds.reduce((acc, id) => ({
           ...acc,
-          [id]: { total_focus_minutes: 0 }
+          [id]: { weekly_focus_minutes: 0 }
         }), {});
         setStats(defaultStats);
       }
