@@ -225,26 +225,26 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       return user ? { user_id: user.id, joined_at: new Date().toISOString() } : null;
     }
 
-    // For slots 2-5, first check participants array
+    // For slots 2-5, check remote users first
     if (slot.index >= 2 && slot.index <= 5) {
       const remoteIndex = slot.index - 2;
       const remoteUser = remoteUsers[remoteIndex];
       
       if (remoteUser) {
-        // First try to find in participants array
+        console.log(`[ROOM] Finding participant for remote user:`, remoteUser.uid);
+        // Try to find in participants array first
         const participant = participants.find(p => p.user_id === String(remoteUser.uid));
         if (participant) {
+          console.log(`[ROOM] Found participant:`, participant);
           return participant;
         }
         
-        // If not in participants but we have their profile, create a temporary participant
-        const profile = profiles[String(remoteUser.uid)];
-        if (profile) {
-          return {
-            user_id: String(remoteUser.uid),
-            joined_at: new Date().toISOString()
-          };
-        }
+        // If not in participants, create a temporary one
+        console.log(`[ROOM] Creating temporary participant for:`, remoteUser.uid);
+        return {
+          user_id: String(remoteUser.uid),
+          joined_at: new Date().toISOString()
+        };
       }
     }
 
@@ -260,12 +260,11 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       return !user || !videoTrack;
     }
     
-    // For other slots, check both participant data and video track
+    // For other slots, check if we have a remote user
     const remoteIndex = slot.index - 2;
     const remoteUser = remoteUsers[remoteIndex];
     
-    // Show participant info if we have participant data, even if video isn't ready yet
-    return !participant || (!remoteUser && !participant);
+    return !remoteUser; // Only check for remote user presence
   };
 
   // Handle room exit
