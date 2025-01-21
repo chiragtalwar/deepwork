@@ -138,50 +138,47 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           console.log('[ROOM] Participant change payload:', payload);
           
           try {
-            // Fetch updated participants
-            const { data: updatedParticipants, error: participantsError } = await supabase
-              .from('room_participants')
-              .select('*')
-              .eq('room_id', roomId);
-
-            if (participantsError) {
-              console.error('[ROOM] Error fetching updated participants:', participantsError);
-              return;
-            }
-
-            console.log('[ROOM] Raw updated participants:', updatedParticipants);
-            
-            if (updatedParticipants && updatedParticipants.length > 0) {
-              setParticipants(updatedParticipants);
+            // For INSERT events, immediately fetch the new participant's profile
+            if (payload.eventType === 'INSERT') {
+              const newParticipant = payload.new;
+              console.log('[ROOM] New participant joined:', newParticipant);
               
-              // Fetch profiles for all participants
-              const participantIds = updatedParticipants.map(p => p.user_id);
-              console.log('[ROOM] Fetching profiles for updated participants:', participantIds);
+              // Update participants state immediately
+              setParticipants(prev => [...prev, newParticipant]);
               
-              const { data: profiles, error: profilesError } = await supabase
+              // Fetch profile for new participant
+              const { data: profile, error: profileError } = await supabase
                 .from('profiles')
                 .select('id, full_name, avatar_url, bio')
-                .in('id', participantIds);
-
-              if (profilesError) {
-                console.error('[ROOM] Error fetching updated profiles:', profilesError);
-                return;
-              }
-
-              if (profiles) {
-                console.log('[ROOM] Updated profiles:', profiles);
-                const profileMap = profiles.reduce((acc, profile) => ({
-                  ...acc,
-                  [profile.id]: profile
-                }), {});
+                .eq('id', newParticipant.user_id)
+                .single();
+                
+              if (profileError) {
+                console.error('[ROOM] Error fetching new participant profile:', profileError);
+              } else if (profile) {
+                console.log('[ROOM] New participant profile:', profile);
                 setProfiles(prev => ({
                   ...prev,
-                  ...profileMap
+                  [profile.id]: profile
                 }));
               }
+            } 
+            // For DELETE events, remove the participant
+            else if (payload.eventType === 'DELETE') {
+              const deletedParticipant = payload.old;
+              console.log('[ROOM] Participant left:', deletedParticipant);
+              setParticipants(prev => prev.filter(p => p.user_id !== deletedParticipant.user_id));
+            }
+            // For UPDATE events, update the participant
+            else if (payload.eventType === 'UPDATE') {
+              const updatedParticipant = payload.new;
+              console.log('[ROOM] Participant updated:', updatedParticipant);
+              setParticipants(prev => prev.map(p => 
+                p.user_id === updatedParticipant.user_id ? updatedParticipant : p
+              ));
             }
           } catch (error) {
-            console.error('[ROOM] Unexpected error in subscription handler:', error);
+            console.error('[ROOM] Error handling participant change:', error);
           }
         }
       )
