@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAgoraRoom } from '@/hooks/useAgoraRoom';
 import { useRoomPresence } from '@/hooks/useRoomPresence';
@@ -44,6 +44,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [currentTask, setCurrentTask] = useState('');
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
+  const lastLoggedState = useRef<string>('');
 
   // Get user IDs for stats
   const userIds = useMemo(() => {
@@ -271,18 +272,29 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       if (remoteIds.length === 0) return;
 
       try {
-        // Fetch final state to ensure consistency
-        const { data: finalParticipants } = await supabase
-          .from('room_participants')
-          .select('*')
-          .eq('room_id', roomId);
+        // Only fetch if we don't have all participants
+        const currentParticipantIds = new Set(participants.map(p => p.user_id));
+        const needsUpdate = remoteIds.some(id => !currentParticipantIds.has(id));
+        
+        if (needsUpdate) {
+          const { data: finalParticipants } = await supabase
+            .from('room_participants')
+            .select('*')
+            .eq('room_id', roomId);
 
-        if (finalParticipants) {
-          console.log('[ROOM] Syncing final participants:', finalParticipants);
-          setParticipants(finalParticipants);
+          if (finalParticipants) {
+            // Only update if there's a difference
+            const hasChanges = finalParticipants.length !== participants.length ||
+              finalParticipants.some(fp => !currentParticipantIds.has(fp.user_id));
+              
+            if (hasChanges) {
+              console.log('[ROOM] Updating participants with changes:', finalParticipants);
+              setParticipants(finalParticipants);
+            }
+          }
         }
 
-        // Ensure we have all profiles
+        // Only fetch missing profiles
         const missingProfileIds = remoteIds.filter(id => !profiles[id]);
         if (missingProfileIds.length > 0) {
           const { data: profileData } = await supabase
@@ -290,7 +302,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
             .select('id, full_name, avatar_url, bio')
             .in('id', missingProfileIds);
 
-          if (profileData) {
+          if (profileData && profileData.length > 0) {
             const newProfiles = profileData.reduce((acc, profile) => ({
               ...acc,
               [profile.id]: profile
@@ -308,18 +320,26 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     };
 
     handleRemoteUser();
-  }, [remoteUsers, roomId, profiles]);
+  }, [remoteUsers, roomId]);
 
-  // Add immediate debug logging for state changes
+  // Consolidate debug logging
   useEffect(() => {
-    console.log('[ROOM] IMMEDIATE State Update:', {
+    // Only log if there are actual changes
+    const logState = {
       remoteUsersCount: remoteUsers.length,
       participantsCount: participants.length,
       profilesCount: Object.keys(profiles).length,
       remoteUserIds: remoteUsers.map(u => String(u.uid)),
       participantIds: participants.map(p => p.user_id),
       profileIds: Object.keys(profiles)
-    });
+    };
+
+    // Store the last state in a ref to avoid unnecessary logs
+    const stateKey = JSON.stringify(logState);
+    if (lastLoggedState.current !== stateKey) {
+      console.log('[ROOM] State Update:', logState);
+      lastLoggedState.current = stateKey;
+    }
   }, [remoteUsers, participants, profiles]);
 
   // Track video elements being added to slots
@@ -557,7 +577,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
                 <div className="relative mr-1 mt-20">
                   <div className="space-y-1.3">
                     <p className="text-blue-50/90 text-sm font-medium">
-                      Welcome <span className="text-white">*2246*</span>
+                      Welcome <span className="text-white">*22:49*</span>
                     </p>
                     <p className="text-blue-50/80 text-sm">
                       No introductions needed—just relax!
