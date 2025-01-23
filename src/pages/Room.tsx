@@ -59,16 +59,79 @@ export function Room() {
     })
   }, [roomId, user])
 
-  const handleSessionComplete = () => {
-    // Leave the room and navigate to rooms page with celebration state
-    leaveRoom();
-    navigate('/rooms', {
-      state: {
-        showCelebration: true,
-        sessionDuration: roomData?.duration || 0
-      },
-      replace: true
-    });
+  const handleSessionComplete = async () => {
+    try {
+      // 1. Update user stats first
+      if (user?.id && roomData?.duration) {
+        const { data: currentStats, error: statsError } = await supabase
+          .from('user_stats')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (statsError && statsError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+          console.error('Error fetching current stats:', statsError);
+        }
+
+        // Calculate new stats
+        const now = new Date();
+        const lastSessionDate = currentStats?.last_session_date ? new Date(currentStats.last_session_date) : null;
+        const isConsecutiveDay = lastSessionDate && 
+          now.toISOString().split('T')[0] !== lastSessionDate.toISOString().split('T')[0] && 
+          Math.abs(now.getTime() - lastSessionDate.getTime()) <= 48 * 60 * 60 * 1000; // Within 48 hours
+
+        const newStats = {
+          user_id: user.id,
+          total_sessions: (currentStats?.total_sessions || 0) + 1,
+          weekly_focus_minutes: (currentStats?.weekly_focus_minutes || 0) + roomData.duration,
+          current_streak: isConsecutiveDay ? (currentStats?.current_streak || 0) + 1 : 1,
+          last_session_date: now.toISOString(),
+        };
+
+        // Upsert the stats
+        const { error: upsertError } = await supabase
+          .from('user_stats')
+          .upsert(newStats);
+
+        if (upsertError) {
+          console.error('Error updating user stats:', upsertError);
+        }
+      }
+
+      // 2. Remove all participants from the room
+      const { error: participantsError } = await supabase
+        .from('room_participants')
+        .delete()
+        .eq('room_id', roomId);
+
+      if (participantsError) {
+        console.error('Error cleaning up room participants:', participantsError);
+      }
+
+      // 3. Update room status to completed
+      const { error: roomError } = await supabase
+        .from('rooms')
+        .update({ status: 'completed' })
+        .eq('id', roomId);
+
+      if (roomError) {
+        console.error('Error updating room status:', roomError);
+      }
+
+      // 4. Leave the room and navigate to rooms page with celebration state
+      leaveRoom();
+      navigate('/rooms', {
+        state: {
+          showCelebration: true,
+          sessionDuration: roomData?.duration || 0
+        },
+        replace: true
+      });
+    } catch (error) {
+      console.error('Error in handleSessionComplete:', error);
+      // Still navigate away even if cleanup fails
+      navigate('/rooms', { replace: true });
+    }
   };
 
   if (!roomId || !user || !roomData) return null
