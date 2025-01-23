@@ -137,37 +137,47 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           console.log('[ROOM] Participant change payload:', payload);
           
           try {
-            if (payload.eventType === 'INSERT') {
-              const newParticipant = payload.new;
-              console.log('[ROOM] New participant joined:', newParticipant);
+            // Always fetch current participants after any change
+            const { data: currentParticipants, error: participantsError } = await supabase
+              .from('room_participants')
+              .select('*')
+              .eq('room_id', roomId);
+
+            if (participantsError) {
+              console.error('[ROOM] Error fetching current participants:', participantsError);
+              return;
+            }
+
+            console.log('[ROOM] Current participants:', currentParticipants);
+            if (currentParticipants) {
+              setParticipants(currentParticipants);
               
-              // Update participants immediately
-              setParticipants(prev => {
-                if (prev.some(p => p.user_id === newParticipant.user_id)) return prev;
-                return [...prev, newParticipant];
-              });
+              // Fetch any missing profiles
+              const missingProfileIds = currentParticipants
+                .map(p => p.user_id)
+                .filter(id => !profiles[id]);
 
-              // Fetch profile immediately for new participant
-              const { data: profile, error: profileError } = await supabase
-                .from('profiles')
-                .select('id, full_name, avatar_url, bio')
-                .eq('id', newParticipant.user_id)
-                .single();
+              if (missingProfileIds.length > 0) {
+                console.log('[ROOM] Fetching missing profiles for:', missingProfileIds);
+                const { data: newProfiles, error: profilesError } = await supabase
+                  .from('profiles')
+                  .select('id, full_name, avatar_url, bio')
+                  .in('id', missingProfileIds);
 
-              if (profileError) {
-                console.error('[ROOM] Error fetching new participant profile:', profileError);
-              } else if (profile) {
-                console.log('[ROOM] Got profile for new participant:', profile);
-                setProfiles(prev => ({
-                  ...prev,
-                  [profile.id]: profile
-                }));
+                if (profilesError) {
+                  console.error('[ROOM] Error fetching profiles:', profilesError);
+                } else if (newProfiles) {
+                  console.log('[ROOM] Adding new profiles:', newProfiles);
+                  const profileMap = newProfiles.reduce((acc, profile) => ({
+                    ...acc,
+                    [profile.id]: profile
+                  }), {});
+                  setProfiles(prev => ({
+                    ...prev,
+                    ...profileMap
+                  }));
+                }
               }
-            } else if (payload.eventType === 'DELETE') {
-              const deletedParticipant = payload.old;
-              setParticipants(prev => 
-                prev.filter(p => p.user_id !== deletedParticipant.user_id)
-              );
             }
           } catch (error) {
             console.error('[ROOM] Error handling participant change:', error);
@@ -179,7 +189,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [roomId]);
+  }, [roomId, user?.id]);
 
   // Track video elements being added to slots
   useEffect(() => {
@@ -229,38 +239,29 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
   }, [participants]);
 
   // Get participant for a slot
-  const getSlotParticipant = useCallback((slot: number) => {
-    // Slot 1 is always the current user
-    if (slot === 1) {
+  const getSlotParticipant = useCallback((slot: { id: string; index: number }) => {
+    // Slot 1 is always for the current user
+    if (slot.index === 1) {
       if (!user) return null;
-      return {
-        user_id: user.id,
-        joined_at: new Date().toISOString(),
-        profile: profiles[user.id],
-        current_focus_task: null
-      };
+      return participantMap[user.id] || { user_id: user.id, joined_at: new Date().toISOString() };
     }
 
     // For slots 2-5, check remote users
-    const remoteUser = remoteUsers[slot - 2];
-    if (!remoteUser) return null;
-
-    const userId = String(remoteUser.uid);
-    const participant = participants.find(p => p.user_id === userId);
-    const profile = profiles[userId];
-
-    if (!profile) {
-      console.log(`[ROOM] No profile found for remote user ${userId} in slot ${slot}`);
-      return null;
+    if (slot.index >= 2 && slot.index <= 5) {
+      const remoteIndex = slot.index - 2;
+      const remoteUser = remoteUsers[remoteIndex];
+      
+      if (remoteUser) {
+        const uid = String(remoteUser.uid);
+        return participantMap[uid] || {
+          user_id: uid,
+          joined_at: new Date().toISOString()
+        };
+      }
     }
 
-    return {
-      user_id: userId,
-      joined_at: participant?.joined_at || new Date().toISOString(),
-      profile,
-      current_focus_task: participant?.current_focus_task || null
-    };
-  }, [user, remoteUsers, participants, profiles]);
+    return null;
+  }, [user, participantMap, remoteUsers]);
 
   // Empty slot check helper
   const isSlotEmpty = useCallback((slot: { id: string; index: number }) => {
@@ -313,47 +314,6 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
 
     fetchProfiles();
   }, [participants, remoteUsers]);
-
-  // Effect to fetch profiles for remote users when they join
-  useEffect(() => {
-    const fetchRemoteUserProfiles = async () => {
-      const remoteIds = remoteUsers.map(u => String(u.uid));
-      const missingProfileIds = remoteIds.filter(id => !profiles[id]);
-
-      if (missingProfileIds.length === 0) return;
-
-      console.log('[ROOM] Fetching profiles for remote users:', missingProfileIds);
-      
-      try {
-        const { data: newProfiles, error } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, bio')
-          .in('id', missingProfileIds);
-
-        if (error) {
-          console.error('[ROOM] Error fetching remote user profiles:', error);
-          return;
-        }
-
-        if (newProfiles && newProfiles.length > 0) {
-          console.log('[ROOM] Got profiles for remote users:', newProfiles);
-          const profileMap = newProfiles.reduce((acc, profile) => ({
-            ...acc,
-            [profile.id]: profile
-          }), {});
-
-          setProfiles(prev => ({
-            ...prev,
-            ...profileMap
-          }));
-        }
-      } catch (error) {
-        console.error('[ROOM] Error in fetchRemoteUserProfiles:', error);
-      }
-    };
-
-    fetchRemoteUserProfiles();
-  }, [remoteUsers]);
 
   // Handle room exit
   const handleLeaveRoom = async () => {
@@ -494,7 +454,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           <div className="flex-1 flex items-center justify-center mt-16">
             <div className="grid grid-cols-5 gap-6 w-full max-w-[1800px] mx-auto">
               {VIDEO_SLOTS.map((slot) => {
-                const participant = getSlotParticipant(slot.index);
+                const participant = getSlotParticipant(slot);
                 const isCurrentUser = participant?.user_id === user?.id;
                 const profile = participant ? profiles[participant.user_id] : null;
                 const stats = participant ? userStats[participant.user_id] : null;
