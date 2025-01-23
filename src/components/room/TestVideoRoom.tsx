@@ -232,11 +232,15 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
 
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
-    console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
-      participants: participants.length,
-      remoteUsers: remoteUsers.length,
-      profiles: Object.keys(profiles).length
-    });
+    // Only log when something changes
+    const logKey = `${slot.index}-${participants.length}-${remoteUsers.length}-${Object.keys(profiles).length}`;
+    if (slot.index === 2) { // Only log for slot 2 to reduce noise
+      console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
+        participants: participants.length,
+        remoteUsers: remoteUsers.length,
+        profiles: Object.keys(profiles).length
+      });
+    }
 
     // Slot 1 is always for the current user
     if (slot.index === 1) {
@@ -253,18 +257,25 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       
       if (remoteUser) {
         const uid = String(remoteUser.uid);
-        console.log(`[ROOM] Processing remote user for slot ${slot.index}:`, uid);
+        // Only log for slot 2 to reduce noise
+        if (slot.index === 2) {
+          console.log(`[ROOM] Processing remote user for slot ${slot.index}:`, uid);
+        }
         
         // First check participants array
         const participant = participants.find(p => p.user_id === uid);
         if (participant) {
-          console.log(`[ROOM] Found participant in array for ${uid}`);
+          if (slot.index === 2) {
+            console.log(`[ROOM] Found participant in array for ${uid}`);
+          }
           return participant;
         }
 
         // If we don't have participant data, trigger a fetch
-        if (!participant) {
-          console.log(`[ROOM] No participant data for ${uid}, triggering fetch`);
+        if (!participant && !profiles[uid]) {
+          if (slot.index === 2) {
+            console.log(`[ROOM] No participant data for ${uid}, triggering fetch`);
+          }
           fetchParticipantData(uid);
         }
 
