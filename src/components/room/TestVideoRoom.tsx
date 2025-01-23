@@ -205,65 +205,68 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       // Get all remote user IDs that we need data for
       const remoteIds = remoteUsers.map(user => String(user.uid));
       
-      // Immediately update participants with remote users to ensure UI updates
-      setParticipants(prev => {
-        const existingIds = new Set(prev.map(p => p.user_id));
-        const newRemoteParticipants = remoteIds
-          .filter(id => !existingIds.has(id))
-          .map(uid => ({
-            user_id: uid,
-            room_id: roomId,
-            joined_at: new Date().toISOString()
-          }));
-        
-        if (newRemoteParticipants.length === 0) return prev;
-        return [...prev, ...newRemoteParticipants];
-      });
-
       if (remoteIds.length === 0) return;
 
       console.log('[ROOM] Handling remote users:', remoteIds);
 
       try {
-        // Fetch profiles first for immediate UI update
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, bio')
-          .in('id', remoteIds);
+        // First, ensure all remote users are in room_participants
+        for (const uid of remoteIds) {
+          const { data: existingParticipant } = await supabase
+            .from('room_participants')
+            .select('*')
+            .eq('room_id', roomId)
+            .eq('user_id', uid)
+            .single();
 
-        if (profileError) {
-          console.error('[ROOM] Error fetching profiles:', profileError);
-        } else if (profileData) {
-          // Immediately update profiles
-          const newProfiles = profileData.reduce((acc, profile) => ({
-            ...acc,
-            [profile.id]: profile
-          }), {});
-          
-          setProfiles(prev => ({
-            ...prev,
-            ...newProfiles
-          }));
+          if (!existingParticipant) {
+            // If not exists, insert the participant
+            const { error: insertError } = await supabase
+              .from('room_participants')
+              .insert([{
+                user_id: uid,
+                room_id: roomId,
+                joined_at: new Date().toISOString()
+              }]);
+
+            if (insertError) {
+              console.error('[ROOM] Error inserting participant:', insertError);
+            }
+          }
         }
 
-        // Then fetch participant data to ensure database consistency
-        const { data: participantData, error: participantError } = await supabase
+        // Then fetch all current participants to ensure UI is in sync
+        const { data: currentParticipants, error: participantsError } = await supabase
           .from('room_participants')
           .select('*')
-          .eq('room_id', roomId)
-          .in('user_id', remoteIds);
+          .eq('room_id', roomId);
 
-        if (participantError) {
-          console.error('[ROOM] Error fetching participants:', participantError);
-          return;
-        }
+        if (participantsError) {
+          console.error('[ROOM] Error fetching participants:', participantsError);
+        } else if (currentParticipants) {
+          console.log('[ROOM] Current participants:', currentParticipants);
+          setParticipants(currentParticipants);
 
-        if (participantData) {
-          setParticipants(prev => {
-            const existingIds = new Set(prev.map(p => p.user_id).filter(id => !remoteIds.includes(id)));
-            const updatedParticipants = [...prev.filter(p => existingIds.has(p.user_id)), ...participantData];
-            return updatedParticipants;
-          });
+          // Fetch profiles for all participants
+          const participantIds = currentParticipants.map(p => p.user_id);
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, bio')
+            .in('id', participantIds);
+
+          if (profileError) {
+            console.error('[ROOM] Error fetching profiles:', profileError);
+          } else if (profileData) {
+            const newProfiles = profileData.reduce((acc, profile) => ({
+              ...acc,
+              [profile.id]: profile
+            }), {});
+            
+            setProfiles(prev => ({
+              ...prev,
+              ...newProfiles
+            }));
+          }
         }
       } catch (error) {
         console.error('[ROOM] Error in handleRemoteUser:', error);
