@@ -46,8 +46,21 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
 
   // Get user IDs for stats
-  const userIds = participants.map(p => p.user_id);
+  const userIds = useMemo(() => {
+    const participantIds = participants.map(p => p.user_id);
+    const remoteIds = remoteUsers.map(u => String(u.uid));
+    return [...new Set([...participantIds, ...remoteIds])];
+  }, [participants, remoteUsers]);
+
+  // Use the improved useUserStats hook
   const { stats: userStats } = useUserStats(userIds);
+
+  // Add debug logging for stats updates
+  useEffect(() => {
+    console.log('[TEST_ROOM] Current stats:', userStats);
+    console.log('[TEST_ROOM] Current participants:', participants);
+    console.log('[TEST_ROOM] Current remote users:', remoteUsers);
+  }, [userStats, participants, remoteUsers]);
 
   // Subscribe to room_participants changes
   useEffect(() => {
