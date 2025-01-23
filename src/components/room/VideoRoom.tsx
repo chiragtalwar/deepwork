@@ -21,8 +21,8 @@ const VIDEO_SLOTS = [
 interface VideoRoomProps {
   roomId: string;
   roomStartTime?: string;
-  roomDuration?: number;
   onSessionComplete?: () => void;
+  duration: number;
 }
 
 // Helper function to format minutes into hours
@@ -34,7 +34,7 @@ const formatHours = (minutes: number) => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
-export function VideoRoom({ roomId, roomStartTime, roomDuration, onSessionComplete }: VideoRoomProps) {
+export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }: VideoRoomProps) {
   const navigate = useNavigate();
   const { user } = useUser();
   const { videoTrack, remoteUsers, client, toggleVideo, toggleAudio } = useAgoraRoom(roomId, user?.id || '');
@@ -452,9 +452,9 @@ export function VideoRoom({ roomId, roomStartTime, roomDuration, onSessionComple
             <div className="absolute left-1/2 top-6 -translate-x-1/2">
               <div className="w-[320px] bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-md rounded-xl border border-white/20 shadow-xl p-1">
                 <div className="bg-gradient-to-b from-black/20 to-black/5 rounded-lg p-4 border border-white/[0.06]">
-                  {roomStartTime && roomDuration && onSessionComplete ? (
+                  {roomStartTime && onSessionComplete ? (
                     <FocusProgress 
-                      duration={roomDuration}
+                      duration={duration}
                       startTime={new Date(roomStartTime)}
                       onSessionComplete={onSessionComplete}
                     />

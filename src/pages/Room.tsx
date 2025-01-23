@@ -42,7 +42,6 @@ export function Room() {
       <VideoRoom 
         key={roomId}
         roomId={roomId} 
-        displayName={user.email?.split('@')[0] || 'Anonymous'}
         duration={50}
       />
     </div>
