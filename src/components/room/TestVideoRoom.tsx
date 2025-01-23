@@ -202,16 +202,51 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
   // Single effect to handle remote users and their data
   useEffect(() => {
     const handleRemoteUser = async () => {
-      // Get all remote user IDs that we need data for
       const remoteIds = remoteUsers.map(user => String(user.uid));
+      console.log('[ROOM] Processing remote users:', remoteIds);
       
       if (remoteIds.length === 0) return;
 
-      console.log('[ROOM] Handling remote users:', remoteIds);
+      // STEP 1: Immediately update UI with remote users
+      setParticipants(prev => {
+        const existingIds = new Set(prev.map(p => p.user_id));
+        const newParticipants = remoteIds
+          .filter(id => !existingIds.has(id))
+          .map(uid => ({
+            user_id: uid,
+            room_id: roomId,
+            joined_at: new Date().toISOString(),
+            // Add a flag to identify temporary entries
+            isTemporary: true
+          }));
+
+        if (newParticipants.length === 0) return prev;
+        console.log('[ROOM] Adding temporary participants:', newParticipants);
+        return [...prev, ...newParticipants];
+      });
 
       try {
-        // First, ensure all remote users are in room_participants
-        for (const uid of remoteIds) {
+        // STEP 2: Fetch existing profiles immediately for UI
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .in('id', remoteIds);
+
+        if (profileData) {
+          console.log('[ROOM] Fetched profiles:', profileData);
+          const newProfiles = profileData.reduce((acc, profile) => ({
+            ...acc,
+            [profile.id]: profile
+          }), {});
+          
+          setProfiles(prev => ({
+            ...prev,
+            ...newProfiles
+          }));
+        }
+
+        // STEP 3: Sync with database
+        const promises = remoteIds.map(async uid => {
           const { data: existingParticipant } = await supabase
             .from('room_participants')
             .select('*')
@@ -220,54 +255,32 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
             .single();
 
           if (!existingParticipant) {
-            // If not exists, insert the participant
-            const { error: insertError } = await supabase
+            return supabase
               .from('room_participants')
               .insert([{
                 user_id: uid,
                 room_id: roomId,
                 joined_at: new Date().toISOString()
-              }]);
-
-            if (insertError) {
-              console.error('[ROOM] Error inserting participant:', insertError);
-            }
+              }])
+              .single();
           }
-        }
+          return { data: existingParticipant };
+        });
 
-        // Then fetch all current participants to ensure UI is in sync
-        const { data: currentParticipants, error: participantsError } = await supabase
+        // Wait for all database operations to complete
+        await Promise.all(promises);
+
+        // STEP 4: Final fetch to ensure consistency
+        const { data: finalParticipants, error: participantsError } = await supabase
           .from('room_participants')
           .select('*')
           .eq('room_id', roomId);
 
-        if (participantsError) {
-          console.error('[ROOM] Error fetching participants:', participantsError);
-        } else if (currentParticipants) {
-          console.log('[ROOM] Current participants:', currentParticipants);
-          setParticipants(currentParticipants);
-
-          // Fetch profiles for all participants
-          const participantIds = currentParticipants.map(p => p.user_id);
-          const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, full_name, avatar_url, bio')
-            .in('id', participantIds);
-
-          if (profileError) {
-            console.error('[ROOM] Error fetching profiles:', profileError);
-          } else if (profileData) {
-            const newProfiles = profileData.reduce((acc, profile) => ({
-              ...acc,
-              [profile.id]: profile
-            }), {});
-            
-            setProfiles(prev => ({
-              ...prev,
-              ...newProfiles
-            }));
-          }
+        if (finalParticipants) {
+          console.log('[ROOM] Final participants:', finalParticipants);
+          setParticipants(finalParticipants);
         }
+
       } catch (error) {
         console.error('[ROOM] Error in handleRemoteUser:', error);
       }
@@ -277,12 +290,15 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     handleRemoteUser();
   }, [remoteUsers, roomId]);
 
-  // Remove the separate profile fetching effect as it's now handled in handleRemoteUser
+  // Add immediate debug logging for state changes
   useEffect(() => {
-    console.log('[ROOM] State update:', {
-      remoteUsers: remoteUsers.map(u => u.uid),
-      participants: participants.map(p => p.user_id),
-      profiles: Object.keys(profiles)
+    console.log('[ROOM] IMMEDIATE State Update:', {
+      remoteUsersCount: remoteUsers.length,
+      participantsCount: participants.length,
+      profilesCount: Object.keys(profiles).length,
+      remoteUserIds: remoteUsers.map(u => String(u.uid)),
+      participantIds: participants.map(p => p.user_id),
+      profileIds: Object.keys(profiles)
     });
   }, [remoteUsers, participants, profiles]);
 
@@ -521,7 +537,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
                 <div className="relative mr-1 mt-20">
                   <div className="space-y-1.3">
                     <p className="text-blue-50/90 text-sm font-medium">
-                      Welcome <span className="text-white">*Members*</span>
+                      Welcome <span className="text-white">*2246*</span>
                     </p>
                     <p className="text-blue-50/80 text-sm">
                       No introductions needed—just relax!
