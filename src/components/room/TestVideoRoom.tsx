@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAgoraRoom } from '@/hooks/useAgoraRoom';
 import { useRoomPresence } from '@/hooks/useRoomPresence';
@@ -230,47 +230,64 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     console.log('[ROOM] Remote users:', remoteUsers);
   }, [user, participants, remoteUsers]);
 
-  // Memoize slot assignments to prevent render loops
-  const slotAssignments = useMemo(() => {
-    const assignments = new Map();
-    
-    // Slot 1 is always for the current user
-    if (user) {
-      const participant = participants.find(p => p.user_id === user.id) || {
-        user_id: user.id,
-        joined_at: new Date().toISOString()
-      };
-      assignments.set(1, participant);
-    }
-
-    // Assign remote users to slots 2-5
-    remoteUsers.forEach((remoteUser, index) => {
-      if (index < 4) { // Max 4 remote users (slots 2-5)
-        const slotIndex = index + 2;
-        const uid = String(remoteUser.uid);
-        const participant = participants.find(p => p.user_id === uid);
-        
-        if (participant) {
-          assignments.set(slotIndex, participant);
-        } else {
-          // If we don't have participant data, trigger a fetch
-          if (!profiles[uid]) {
-            fetchParticipantData(uid);
-          }
-          assignments.set(slotIndex, {
-            user_id: uid,
-            joined_at: new Date().toISOString()
-          });
-        }
-      }
-    });
-
-    return assignments;
-  }, [user?.id, participants, remoteUsers.map(u => u.uid).join(','), Object.keys(profiles).join(',')]);
-
   // Get participant for a slot
   const getSlotParticipant = (slot: { id: string; index: number }) => {
-    return slotAssignments.get(slot.index) || null;
+    // Only log when something changes
+    const logKey = `${slot.index}-${participants.length}-${remoteUsers.length}-${Object.keys(profiles).length}`;
+    if (slot.index === 2) { // Only log for slot 2 to reduce noise
+      console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
+        participants: participants.length,
+        remoteUsers: remoteUsers.length,
+        profiles: Object.keys(profiles).length
+      });
+    }
+
+    // Slot 1 is always for the current user
+    if (slot.index === 1) {
+      if (!user) return null;
+      const participant = participants.find(p => p.user_id === user.id);
+      if (participant) return participant;
+      return { user_id: user.id, joined_at: new Date().toISOString() };
+    }
+
+    // For slots 2-5, check remote users
+    if (slot.index >= 2 && slot.index <= 5) {
+      const remoteIndex = slot.index - 2;
+      const remoteUser = remoteUsers[remoteIndex];
+      
+      if (remoteUser) {
+        const uid = String(remoteUser.uid);
+        // Only log for slot 2 to reduce noise
+        if (slot.index === 2) {
+          console.log(`[ROOM] Processing remote user for slot ${slot.index}:`, uid);
+        }
+        
+        // First check participants array
+        const participant = participants.find(p => p.user_id === uid);
+        if (participant) {
+          if (slot.index === 2) {
+            console.log(`[ROOM] Found participant in array for ${uid}`);
+          }
+          return participant;
+        }
+
+        // If we don't have participant data, trigger a fetch
+        if (!participant && !profiles[uid]) {
+          if (slot.index === 2) {
+            console.log(`[ROOM] No participant data for ${uid}, triggering fetch`);
+          }
+          fetchParticipantData(uid);
+        }
+
+        // Return temporary participant
+        return {
+          user_id: uid,
+          joined_at: new Date().toISOString()
+        };
+      }
+    }
+
+    return null;
   };
 
   // Function to fetch participant data
