@@ -272,6 +272,12 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
 
   // Get participant for a slot
   const getSlotParticipant = useCallback((slot: { id: string; index: number }) => {
+    console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
+      user,
+      participantMap,
+      remoteUsers
+    });
+
     // Slot 1 is always for the current user
     if (slot.index === 1) {
       if (!user) return null;
@@ -285,6 +291,53 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       
       if (remoteUser) {
         const uid = String(remoteUser.uid);
+        console.log(`[ROOM] Found remote user for slot ${slot.index}:`, {
+          uid,
+          hasParticipant: !!participantMap[uid],
+          hasProfile: !!profiles[uid]
+        });
+
+        // If we don't have this participant's data yet, trigger a fetch
+        if (!participantMap[uid]) {
+          console.log(`[ROOM] Fetching data for remote user ${uid}`);
+          // Fetch participant data
+          supabase
+            .from('room_participants')
+            .select('*')
+            .eq('room_id', roomId)
+            .eq('user_id', uid)
+            .single()
+            .then(({ data, error }) => {
+              if (error) {
+                console.error('[ROOM] Error fetching participant:', error);
+              } else if (data) {
+                console.log('[ROOM] Got participant data:', data);
+                setParticipants(prev => [...prev, data]);
+              }
+            });
+
+          // Fetch profile if we don't have it
+          if (!profiles[uid]) {
+            supabase
+              .from('profiles')
+              .select('id, full_name, avatar_url, bio')
+              .eq('id', uid)
+              .single()
+              .then(({ data, error }) => {
+                if (error) {
+                  console.error('[ROOM] Error fetching profile:', error);
+                } else if (data) {
+                  console.log('[ROOM] Got profile data:', data);
+                  setProfiles(prev => ({
+                    ...prev,
+                    [uid]: data
+                  }));
+                }
+              });
+          }
+        }
+
+        // Return what we have for now, even if incomplete
         return participantMap[uid] || {
           user_id: uid,
           joined_at: new Date().toISOString()
@@ -293,7 +346,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     }
 
     return null;
-  }, [user, participantMap, remoteUsers]);
+  }, [user, participantMap, remoteUsers, profiles, roomId]);
 
   // Empty slot check helper
   const isSlotEmpty = useCallback((slot: { id: string; index: number }) => {
