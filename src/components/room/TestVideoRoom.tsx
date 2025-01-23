@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAgoraRoom } from '@/hooks/useAgoraRoom';
 import { useRoomPresence } from '@/hooks/useRoomPresence';
@@ -230,46 +230,64 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     console.log('[ROOM] Remote users:', remoteUsers);
   }, [user, participants, remoteUsers]);
 
-  // Memoize slot assignments to prevent render loops
-  const slotAssignments = useMemo(() => {
-    const assignments = new Map();
-    
-    // Slot 1: Current user
-    if (user) {
-      const participant = participants.find(p => p.user_id === user.id) || {
-        user_id: user.id,
-        joined_at: new Date().toISOString()
-      };
-      assignments.set(1, participant);
+  // Get participant for a slot
+  const getSlotParticipant = (slot: { id: string; index: number }) => {
+    // Only log when something changes
+    const logKey = `${slot.index}-${participants.length}-${remoteUsers.length}-${Object.keys(profiles).length}`;
+    if (slot.index === 2) { // Only log for slot 2 to reduce noise
+      console.log(`[ROOM] Getting participant for slot ${slot.index}`, {
+        participants: participants.length,
+        remoteUsers: remoteUsers.length,
+        profiles: Object.keys(profiles).length
+      });
     }
 
-    // Slots 2-5: Remote users
-    remoteUsers.forEach((remoteUser, index) => {
-      if (index < 4) { // Max 4 remote users (slots 2-5)
-        const slotIndex = index + 2;
+    // Slot 1 is always for the current user
+    if (slot.index === 1) {
+      if (!user) return null;
+      const participant = participants.find(p => p.user_id === user.id);
+      if (participant) return participant;
+      return { user_id: user.id, joined_at: new Date().toISOString() };
+    }
+
+    // For slots 2-5, check remote users
+    if (slot.index >= 2 && slot.index <= 5) {
+      const remoteIndex = slot.index - 2;
+      const remoteUser = remoteUsers[remoteIndex];
+      
+      if (remoteUser) {
         const uid = String(remoteUser.uid);
+        // Only log for slot 2 to reduce noise
+        if (slot.index === 2) {
+          console.log(`[ROOM] Processing remote user for slot ${slot.index}:`, uid);
+        }
         
-        // Find existing participant or create temporary one
-        const participant = participants.find(p => p.user_id === uid) || {
+        // First check participants array
+        const participant = participants.find(p => p.user_id === uid);
+        if (participant) {
+          if (slot.index === 2) {
+            console.log(`[ROOM] Found participant in array for ${uid}`);
+          }
+          return participant;
+        }
+
+        // If we don't have participant data, trigger a fetch
+        if (!participant && !profiles[uid]) {
+          if (slot.index === 2) {
+            console.log(`[ROOM] No participant data for ${uid}, triggering fetch`);
+          }
+          fetchParticipantData(uid);
+        }
+
+        // Return temporary participant
+        return {
           user_id: uid,
           joined_at: new Date().toISOString()
         };
-        
-        assignments.set(slotIndex, participant);
-
-        // Trigger fetch if needed
-        if (!profiles[uid] && !participants.some(p => p.user_id === uid)) {
-          fetchParticipantData(uid);
-        }
       }
-    });
+    }
 
-    return assignments;
-  }, [user?.id, participants.map(p => p.user_id).join(','), remoteUsers.map(u => u.uid).join(','), Object.keys(profiles).join(',')]);
-
-  // Get participant for a slot (now uses memoized assignments)
-  const getSlotParticipant = (slot: { id: string; index: number }) => {
-    return slotAssignments.get(slot.index) || null;
+    return null;
   };
 
   // Function to fetch participant data
@@ -328,12 +346,17 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     });
   }, [remoteUsers]);
 
-  // Empty slot check helper (now uses memoized assignments)
+  // Empty slot check helper
   const isSlotEmpty = (slot: { id: string; index: number }) => {
+    // For slot 1, check local video and user
     if (slot.index === 1) {
       return !user || !videoTrack;
     }
-    return !slotAssignments.get(slot.index);
+    
+    // For other slots, only check for remote user presence
+    const remoteIndex = slot.index - 2;
+    const remoteUser = remoteUsers[remoteIndex];
+    return !remoteUser;
   };
 
   // Fetch profiles whenever participants change
