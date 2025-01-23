@@ -397,35 +397,57 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       return participantMap[user.id] || { user_id: user.id, joined_at: new Date().toISOString() };
     }
 
-    // For slots 2-5, check remote users
-    if (slot.index >= 2 && slot.index <= 5) {
-      const remoteIndex = slot.index - 2;
-      const remoteUser = remoteUsers[remoteIndex];
-      
+    // For slots 2-5, get participants in order of join time
+    const remoteParticipants = participants
+      .filter(p => p.user_id !== user?.id)
+      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+    
+    const slotIndex = slot.index - 2; // Convert slot index to remote participant index
+    const participant = remoteParticipants[slotIndex];
+    
+    if (participant) {
+      // Find the corresponding remote user for this participant
+      const remoteUser = remoteUsers.find(ru => String(ru.uid) === participant.user_id);
       if (remoteUser) {
-        const uid = String(remoteUser.uid);
-        return participantMap[uid] || {
-          user_id: uid,
-          joined_at: new Date().toISOString()
+        return {
+          ...participant,
+          remoteUser // Attach the remote user data for video handling
         };
       }
     }
 
     return null;
-  }, [user, participantMap, remoteUsers]);
+  }, [user, participantMap, participants, remoteUsers]);
 
   // Empty slot check helper
   const isSlotEmpty = useCallback((slot: { id: string; index: number }) => {
-    // For slot 1, check local video and user
-    if (slot.index === 1) {
-      return !user || !videoTrack;
-    }
-    
-    // For other slots, only check for remote user presence
-    const remoteIndex = slot.index - 2;
-    const remoteUser = remoteUsers[remoteIndex];
-    return !remoteUser;
-  }, [user, videoTrack, remoteUsers]);
+    const participant = getSlotParticipant(slot);
+    return !participant || (slot.index !== 1 && !participant.remoteUser);
+  }, [getSlotParticipant]);
+
+  // Update video positioning when participants change
+  useEffect(() => {
+    VIDEO_SLOTS.forEach(slot => {
+      const container = document.getElementById(slot.id);
+      if (!container) return;
+
+      // Clear existing video elements
+      container.innerHTML = '';
+
+      // Get participant for this slot
+      const participant = getSlotParticipant(slot);
+      if (!participant) return;
+
+      // For slot 1 (local user)
+      if (slot.index === 1 && videoTrack) {
+        videoTrack.play(slot.id);
+      }
+      // For other slots (remote users)
+      else if (participant.remoteUser) {
+        participant.remoteUser.videoTrack?.play(slot.id);
+      }
+    });
+  }, [participants, remoteUsers, videoTrack, getSlotParticipant]);
 
   // Fetch profiles whenever participants change
   useEffect(() => {
@@ -577,7 +599,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
                 <div className="relative mr-1 mt-20">
                   <div className="space-y-1.3">
                     <p className="text-blue-50/90 text-sm font-medium">
-                      Welcome <span className="text-white">*22:58*</span>
+                      Welcome <span className="text-white">*23:11*</span>
                     </p>
                     <p className="text-blue-50/80 text-sm">
                       No introductions needed—just relax!

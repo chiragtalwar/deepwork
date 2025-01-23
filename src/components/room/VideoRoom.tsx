@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAgoraRoom } from '@/hooks/useAgoraRoom';
 import { useRoomPresence } from '@/hooks/useRoomPresence';
@@ -46,227 +46,166 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [currentTask, setCurrentTask] = useState('');
   const [isUpdatingTask, setIsUpdatingTask] = useState(false);
+  const lastLoggedState = useRef<string>('');
 
   // Get user IDs for stats
-  const userIds = participants.map(p => p.user_id);
+  const userIds = useMemo(() => {
+    const participantIds = participants.map(p => p.user_id);
+    const remoteIds = remoteUsers.map(u => String(u.uid));
+    return [...new Set([...participantIds, ...remoteIds])];
+  }, [participants, remoteUsers]);
+
+  // Use the improved useUserStats hook
   const { stats: userStats } = useUserStats(userIds);
 
-  // Subscribe to room_participants changes
+  // Add debug logging for stats updates
   useEffect(() => {
-    let isSubscribed = true;
+    console.log('[ROOM] Current stats:', userStats);
+    console.log('[ROOM] Current participants:', participants);
+    console.log('[ROOM] Current remote users:', remoteUsers);
+  }, [userStats, participants, remoteUsers]);
 
-    // Fetch initial participants data
-    const fetchInitialData = async () => {
-      console.log('[ROOM] Fetching initial data for room:', roomId);
+  // Subscribe to Agora client events for immediate user updates
+  useEffect(() => {
+    if (!client) return;
+
+    const handleUserJoined = async (user: any) => {
+      console.log('[ROOM] Agora user joined:', user);
+      const remoteId = String(user.uid);
       
-      try {
-        // First fetch current user's profile
-        if (user?.id) {
-          const { data: currentUserProfile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, full_name, avatar_url, bio')
-            .eq('id', user.id)
-            .single();
+      // Immediately update participants
+      setParticipants(prev => {
+        const existingIds = new Set(prev.map(p => p.user_id));
+        if (existingIds.has(remoteId)) return prev;
+        
+        console.log('[ROOM] Adding new participant immediately:', remoteId);
+        return [...prev, {
+          user_id: remoteId,
+          room_id: roomId,
+          joined_at: new Date().toISOString(),
+          isTemporary: true
+        }];
+      });
 
-          if (profileError) {
-            console.error('[ROOM] Error fetching current user profile:', profileError);
-          } else if (currentUserProfile && isSubscribed) {
-            console.log('[ROOM] Current user profile:', currentUserProfile);
-            setProfiles(prev => ({
-              ...prev,
-              [user.id]: currentUserProfile
-            }));
-          }
-        }
-
-        // Then fetch all participants
-        const { data: initialParticipants, error: participantsError } = await supabase
-          .from('room_participants')
-          .select('*')
-        .eq('room_id', roomId);
-
-        if (participantsError) {
-          console.error('[ROOM] Error fetching participants:', participantsError);
-        return;
-      }
-
-        if (initialParticipants && isSubscribed) {
-          console.log('[ROOM] Initial participants:', initialParticipants);
-          setParticipants(initialParticipants);
-          
-          // Fetch profiles for all participants
-          const participantIds = initialParticipants.map(p => p.user_id);
-          if (participantIds.length > 0) {
-      const { data: profiles, error: profilesError } = await supabase
+      // Immediately fetch and update profile
+      const { data: profile } = await supabase
         .from('profiles')
-              .select('id, full_name, avatar_url, bio')
-              .in('id', participantIds);
+        .select('id, full_name, avatar_url, bio')
+        .eq('id', remoteId)
+        .single();
 
-            if (profilesError) {
-              console.error('[ROOM] Error fetching profiles:', profilesError);
-            } else if (profiles && isSubscribed) {
-              console.log('[ROOM] Initial profiles:', profiles);
-              const profileMap = profiles.reduce((acc, profile) => ({
-                ...acc,
-                [profile.id]: profile
-              }), {});
-              setProfiles(prev => ({
-                ...prev,
-                ...profileMap
-              }));
-            }
-          }
+      if (profile) {
+        console.log('[ROOM] Setting profile immediately:', profile);
+        setProfiles(prev => ({
+          ...prev,
+          [remoteId]: profile
+        }));
       }
-    } catch (error) {
-        console.error('[ROOM] Error in fetchInitialData:', error);
-    }
-  };
 
-    fetchInitialData();
+      // Then sync with database
+      const { data: existingParticipant } = await supabase
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('user_id', remoteId)
+        .single();
 
-    // Subscribe to room_participants changes
-    const subscription = supabase
-      .channel(`room_participants:${roomId}`)
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'room_participants',
-          filter: `room_id=eq.${roomId}`
-        }, 
-        async (payload) => {
-          console.log('[ROOM] Participant change:', payload);
-          
-          // Refetch all participants to ensure consistency
-          const { data: currentParticipants, error: participantsError } = await supabase
+      if (!existingParticipant) {
+        await supabase
+          .from('room_participants')
+          .insert([{
+            user_id: remoteId,
+            room_id: roomId,
+            joined_at: new Date().toISOString()
+          }]);
+      }
+    };
+
+    client.on('user-joined', handleUserJoined);
+    
+    return () => {
+      client.off('user-joined', handleUserJoined);
+    };
+  }, [client, roomId]);
+
+  // Modify existing remote users effect to handle updates
+  useEffect(() => {
+    const handleRemoteUser = async () => {
+      const remoteIds = remoteUsers.map(user => String(user.uid));
+      console.log('[ROOM] Processing remote users:', remoteIds);
+      
+      if (remoteIds.length === 0) return;
+
+      try {
+        // Only fetch if we don't have all participants
+        const currentParticipantIds = new Set(participants.map(p => p.user_id));
+        const needsUpdate = remoteIds.some(id => !currentParticipantIds.has(id));
+        
+        if (needsUpdate) {
+          const { data: finalParticipants } = await supabase
             .from('room_participants')
             .select('*')
             .eq('room_id', roomId);
 
-          if (participantsError) {
-            console.error('[ROOM] Error fetching current participants:', participantsError);
-            return;
-          }
-
-          if (currentParticipants && isSubscribed) {
-            console.log('[ROOM] Updated participants:', currentParticipants);
-            setParticipants(currentParticipants);
-
-            // Fetch any missing profiles
-            const missingProfileIds = currentParticipants
-              .map(p => p.user_id)
-              .filter(id => !profiles[id]);
-
-            if (missingProfileIds.length > 0) {
-              const { data: newProfiles, error: profilesError } = await supabase
-                .from('profiles')
-                .select('id, full_name, avatar_url, bio')
-                .in('id', missingProfileIds);
-
-              if (profilesError) {
-                console.error('[ROOM] Error fetching profiles:', profilesError);
-              } else if (newProfiles && isSubscribed) {
-                console.log('[ROOM] New profiles:', newProfiles);
-                const profileMap = newProfiles.reduce((acc, profile) => ({
-                  ...acc,
-                  [profile.id]: profile
-                }), {});
-                setProfiles(prev => ({
-                  ...prev,
-                  ...profileMap
-                }));
-              }
+          if (finalParticipants) {
+            // Only update if there's a difference
+            const hasChanges = finalParticipants.length !== participants.length ||
+              finalParticipants.some(fp => !currentParticipantIds.has(fp.user_id));
+              
+            if (hasChanges) {
+              console.log('[ROOM] Updating participants with changes:', finalParticipants);
+              setParticipants(finalParticipants);
             }
           }
         }
-      )
-      .subscribe();
 
-    return () => {
-      isSubscribed = false;
-      subscription.unsubscribe();
-    };
-  }, [roomId, user?.id]);
+        // Only fetch missing profiles
+        const missingProfileIds = remoteIds.filter(id => !profiles[id]);
+        if (missingProfileIds.length > 0) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, bio')
+            .in('id', missingProfileIds);
 
-  // Single effect to handle remote users and their data
-  useEffect(() => {
-    const handleRemoteUser = async () => {
-      // Get all remote user IDs that we need data for
-      const remoteIds = remoteUsers.map(user => String(user.uid));
-      if (remoteIds.length === 0) return;
-
-      console.log('[ROOM] Handling remote users:', remoteIds);
-
-      try {
-        // First, get participant data for all remote users
-        const { data: participantData, error: participantError } = await supabase
-        .from('room_participants')
-        .select('*')
-        .eq('room_id', roomId)
-          .in('user_id', remoteIds);
-
-        if (participantError) {
-          console.error('[ROOM] Error fetching participants:', participantError);
-        return;
-      }
-
-        // If we don't get participant data, create temporary ones
-        const effectiveParticipants = participantData || remoteIds.map(uid => ({
-          user_id: uid,
-          room_id: roomId,
-          joined_at: new Date().toISOString()
-        }));
-
-        console.log('[ROOM] Setting participants:', effectiveParticipants);
-        
-        // Update participants, preserving existing ones
-        setParticipants(prev => {
-          const existing = prev.filter(p => !remoteIds.includes(p.user_id));
-          return [...existing, ...effectiveParticipants];
-        });
-
-        // Then, get profiles for all remote users
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, bio')
-          .in('id', remoteIds);
-
-        if (profileError) {
-          console.error('[ROOM] Error fetching profiles:', profileError);
-        return;
-      }
-
-        // If we don't get profile data, create temporary ones
-        const effectiveProfiles = profileData || remoteIds.map(uid => ({
-          id: uid,
-          full_name: 'Loading...',
-          avatar_url: null,
-          bio: 'Loading...'
-        }));
-
-        console.log('[ROOM] Setting profiles:', effectiveProfiles);
-        
-        const profileMap = effectiveProfiles.reduce((acc, profile) => ({
-          ...acc,
-          [profile.id]: profile
-        }), {});
-        
-        setProfiles(prev => ({
-          ...prev,
-          ...profileMap
-        }));
-
-        // If we created temporary data, trigger a refetch after a short delay
-        if (!participantData || !profileData) {
-          setTimeout(handleRemoteUser, 1000);
+          if (profileData && profileData.length > 0) {
+            const newProfiles = profileData.reduce((acc, profile) => ({
+              ...acc,
+              [profile.id]: profile
+            }), {});
+            
+            setProfiles(prev => ({
+              ...prev,
+              ...newProfiles
+            }));
+          }
         }
-    } catch (error) {
-        console.error('[ROOM] Error handling remote users:', error);
+      } catch (error) {
+        console.error('[ROOM] Error in handleRemoteUser:', error);
       }
     };
 
     handleRemoteUser();
   }, [remoteUsers, roomId]);
+
+  // Consolidate debug logging
+  useEffect(() => {
+    // Only log if there are actual changes
+    const logState = {
+      remoteUsersCount: remoteUsers.length,
+      participantsCount: participants.length,
+      profilesCount: Object.keys(profiles).length,
+      remoteUserIds: remoteUsers.map(u => String(u.uid)),
+      participantIds: participants.map(p => p.user_id),
+      profileIds: Object.keys(profiles)
+    };
+
+    // Store the last state in a ref to avoid unnecessary logs
+    const stateKey = JSON.stringify(logState);
+    if (lastLoggedState.current !== stateKey) {
+      console.log('[ROOM] State Update:', logState);
+      lastLoggedState.current = stateKey;
+    }
+  }, [remoteUsers, participants, profiles]);
 
   // Track video elements being added to slots
   useEffect(() => {
@@ -325,35 +264,57 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
       return participantMap[user.id] || { user_id: user.id, joined_at: new Date().toISOString() };
     }
 
-    // For slots 2-5, check remote users
-    if (slot.index >= 2 && slot.index <= 5) {
-      const remoteIndex = slot.index - 2;
-      const remoteUser = remoteUsers[remoteIndex];
-      
+    // For slots 2-5, get participants in order of join time
+    const remoteParticipants = participants
+      .filter(p => p.user_id !== user?.id)
+      .sort((a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime());
+    
+    const slotIndex = slot.index - 2; // Convert slot index to remote participant index
+    const participant = remoteParticipants[slotIndex];
+    
+    if (participant) {
+      // Find the corresponding remote user for this participant
+      const remoteUser = remoteUsers.find(ru => String(ru.uid) === participant.user_id);
       if (remoteUser) {
-        const uid = String(remoteUser.uid);
-        return participantMap[uid] || {
-          user_id: uid,
-          joined_at: new Date().toISOString()
+        return {
+          ...participant,
+          remoteUser // Attach the remote user data for video handling
         };
       }
     }
 
     return null;
-  }, [user, participantMap, remoteUsers]);
+  }, [user, participantMap, participants, remoteUsers]);
 
   // Empty slot check helper
   const isSlotEmpty = useCallback((slot: { id: string; index: number }) => {
-    // For slot 1, check local video and user
-    if (slot.index === 1) {
-      return !user || !videoTrack;
-    }
-    
-    // For other slots, only check for remote user presence
-    const remoteIndex = slot.index - 2;
-    const remoteUser = remoteUsers[remoteIndex];
-    return !remoteUser;
-  }, [user, videoTrack, remoteUsers]);
+    const participant = getSlotParticipant(slot);
+    return !participant || (slot.index !== 1 && !participant.remoteUser);
+  }, [getSlotParticipant]);
+
+  // Update video positioning when participants change
+  useEffect(() => {
+    VIDEO_SLOTS.forEach(slot => {
+      const container = document.getElementById(slot.id);
+      if (!container) return;
+
+      // Clear existing video elements
+      container.innerHTML = '';
+
+      // Get participant for this slot
+      const participant = getSlotParticipant(slot);
+      if (!participant) return;
+
+      // For slot 1 (local user)
+      if (slot.index === 1 && videoTrack) {
+        videoTrack.play(slot.id);
+      }
+      // For other slots (remote users)
+      else if (participant.remoteUser) {
+        participant.remoteUser.videoTrack?.play(slot.id);
+      }
+    });
+  }, [participants, remoteUsers, videoTrack, getSlotParticipant]);
 
   // Handle room exit
   const handleLeaveRoom = async () => {
