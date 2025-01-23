@@ -577,7 +577,7 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
                 <div className="relative mr-1 mt-20">
                   <div className="space-y-1.3">
                     <p className="text-blue-50/90 text-sm font-medium">
-                      Welcome <span className="text-white">*22:49*</span>
+                      Welcome <span className="text-white">*22:58*</span>
                     </p>
                     <p className="text-blue-50/80 text-sm">
                       No introductions needed—just relax!
