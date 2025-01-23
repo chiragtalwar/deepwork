@@ -12,23 +12,8 @@ export function useUserStats(userIds: string[]) {
       if (!userIds.length) return;
 
       try {
-        // First check if the column exists
-        const { data: columns, error: columnError } = await supabase
-          .from('user_stats')
-          .select()
-          .limit(1);
-
-        // If table/column doesn't exist, return default values
-        if (columnError) {
-          console.log('[STATS] Stats table not ready, using defaults');
-          const defaultStats = userIds.reduce((acc, id) => ({
-            ...acc,
-            [id]: { weekly_focus_minutes: 0 }
-          }), {});
-          if (mounted) setStats(defaultStats);
-          return;
-        }
-
+        console.log('[STATS] Fetching stats for users:', userIds);
+        
         // If table exists, fetch actual stats
         const { data, error } = await supabase
           .from('user_stats')
@@ -36,6 +21,8 @@ export function useUserStats(userIds: string[]) {
           .in('user_id', userIds);
 
         if (error) throw error;
+
+        console.log('[STATS] Received stats:', data);
 
         // Convert array to record and fill in missing users with 0
         const statsMap = (data || []).reduce((acc, stat) => ({
@@ -54,7 +41,10 @@ export function useUserStats(userIds: string[]) {
           }
         }), {});
 
-        if (mounted) setStats(fullStats);
+        if (mounted) {
+          console.log('[STATS] Setting stats:', fullStats);
+          setStats(fullStats);
+        }
       } catch (err) {
         console.error('[STATS] Error fetching stats:', err);
         if (mounted) setError(err as Error);
@@ -76,38 +66,55 @@ export function useUserStats(userIds: string[]) {
     // Initial fetch
     fetchStats();
 
-    // Subscribe to changes
-    const subscription = supabase
-      .channel('user_stats_changes')
-      .on('postgres_changes', 
+    // Create individual subscriptions for each user
+    const subscriptions = userIds.map(userId => 
+      supabase
+        .channel(`user_stats_${userId}`)
+        .on('postgres_changes', 
+          {
+            event: '*',
+            schema: 'public',
+            table: 'user_stats',
+            filter: `user_id=eq.${userId}`,
+          },
+          async (payload: any) => {
+            console.log(`[STATS] Stats changed for user ${userId}:`, payload);
+            
+            if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+              const newData = payload.new;
+              if (mounted) {
+                setStats(prev => ({
+                  ...prev,
+                  [newData.user_id]: newData
+                }));
+              }
+            }
+          }
+        )
+        .subscribe()
+    );
+
+    // Also subscribe to room_participants changes to catch new participants
+    const participantsSubscription = supabase
+      .channel('room_participants_stats')
+      .on('postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'user_stats',
-          filter: `user_id=in.(${userIds.join(',')})`,
+          table: 'room_participants'
         },
-        async (payload: any) => {
-          console.log('[STATS] Stats changed:', payload);
-          
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            const newData = payload.new;
-            if (mounted) {
-              setStats(prev => ({
-                ...prev,
-                [newData.user_id]: newData
-              }));
-            }
-          } else {
-            // For other events or to ensure consistency, refetch all stats
-            await fetchStats();
-          }
+        async () => {
+          // Refetch all stats when participants change
+          await fetchStats();
         }
       )
       .subscribe();
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      // Cleanup all subscriptions
+      subscriptions.forEach(subscription => subscription.unsubscribe());
+      participantsSubscription.unsubscribe();
     };
   }, [userIds.join(',')]); // Dependency on stringified userIds to avoid infinite loops
 
