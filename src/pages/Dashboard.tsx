@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { Button } from '../components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { useUserStats } from '../hooks/useUserStats';
 
 interface UserStats {
   id: string;
@@ -43,67 +44,21 @@ const KPICardSkeleton = () => (
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [timePeriod, setTimePeriod] = useState<'W' | 'M'>('W');
   const [sessionData, setSessionData] = useState<ChartDataPoint[]>([]);
   const [monthOffset, setMonthOffset] = useState(0);
   const mounted = useRef(true);
 
-  const fetchUserData = useCallback(async (isBackgroundRefresh = false) => {
-    if (!user || !mounted.current) return;
-    
-    try {
-      const { data: statsData, error: statsError } = await supabase
-        .from('user_stats')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+  // Use the real-time stats hook instead of direct fetching
+  const { stats: userStatsMap } = useUserStats(user ? [user.id] : []);
+  const userStats = user ? userStatsMap[user.id] : null;
 
-      if (statsError) {
-        console.error('Error fetching user stats:', statsError);
-        return;
-      }
-
-      if (mounted.current && statsData) {
-        setUserStats(statsData);
-        setIsLoading(false);
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
+  useEffect(() => {
+    if (userStats) {
+      setIsLoading(false);
     }
-  }, [user]);
-
-  // Initial load effect
-  useEffect(() => {
-    if (!user) return;
-
-    mounted.current = true;
-    fetchUserData();
-
-    return () => {
-      mounted.current = false;
-    };
-  }, [user, fetchUserData]);
-
-  // Visibility change effect for background refresh
-  useEffect(() => {
-    if (!user) return;
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && mounted.current) {
-        fetchUserData(true);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [user, fetchUserData]);
+  }, [userStats]);
 
   const calculateWeeklyFocusTime = () => {
     if (!userStats) return 0;

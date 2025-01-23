@@ -6,6 +6,8 @@ export function useUserStats(userIds: string[]) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
     const fetchStats = async () => {
       if (!userIds.length) return;
 
@@ -23,14 +25,14 @@ export function useUserStats(userIds: string[]) {
             ...acc,
             [id]: { weekly_focus_minutes: 0 }
           }), {});
-          setStats(defaultStats);
+          if (mounted) setStats(defaultStats);
           return;
         }
 
         // If table exists, fetch actual stats
         const { data, error } = await supabase
           .from('user_stats')
-          .select('user_id, weekly_focus_minutes')
+          .select('user_id, weekly_focus_minutes, total_sessions, current_streak, last_session_date')
           .in('user_id', userIds);
 
         if (error) throw error;
@@ -44,25 +46,70 @@ export function useUserStats(userIds: string[]) {
         // Ensure all requested users have stats
         const fullStats = userIds.reduce((acc, id) => ({
           ...acc,
-          [id]: statsMap[id] || { weekly_focus_minutes: 0 }
+          [id]: statsMap[id] || { 
+            weekly_focus_minutes: 0,
+            total_sessions: 0,
+            current_streak: 0,
+            last_session_date: null
+          }
         }), {});
 
-        setStats(fullStats);
+        if (mounted) setStats(fullStats);
       } catch (err) {
         console.error('[STATS] Error fetching stats:', err);
-        setError(err as Error);
+        if (mounted) setError(err as Error);
         
         // Still provide default values on error
         const defaultStats = userIds.reduce((acc, id) => ({
           ...acc,
-          [id]: { weekly_focus_minutes: 0 }
+          [id]: { 
+            weekly_focus_minutes: 0,
+            total_sessions: 0,
+            current_streak: 0,
+            last_session_date: null
+          }
         }), {});
-        setStats(defaultStats);
+        if (mounted) setStats(defaultStats);
       }
     };
 
+    // Initial fetch
     fetchStats();
-  }, [userIds]);
+
+    // Subscribe to changes
+    const subscription = supabase
+      .channel('user_stats_changes')
+      .on('postgres_changes', 
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_stats',
+          filter: `user_id=in.(${userIds.join(',')})`,
+        },
+        async (payload: any) => {
+          console.log('[STATS] Stats changed:', payload);
+          
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            const newData = payload.new;
+            if (mounted) {
+              setStats(prev => ({
+                ...prev,
+                [newData.user_id]: newData
+              }));
+            }
+          } else {
+            // For other events or to ensure consistency, refetch all stats
+            await fetchStats();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [userIds.join(',')]); // Dependency on stringified userIds to avoid infinite loops
 
   return { stats, error };
 } 
