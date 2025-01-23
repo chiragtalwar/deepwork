@@ -270,57 +270,67 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     }, {} as Record<string, any>);
   }, [participants]);
 
-  // Effect to fetch missing participant data and profiles for remote users
+  // Single effect to handle remote users and their data
   useEffect(() => {
-    const fetchMissingData = async () => {
-      // Get remote users that don't have participant data
-      const missingParticipants = remoteUsers
-        .map(user => String(user.uid))
-        .filter(uid => !participantMap[uid]);
+    const handleRemoteUser = async () => {
+      // Get all remote user IDs that we need data for
+      const remoteIds = remoteUsers.map(user => String(user.uid));
+      if (remoteIds.length === 0) return;
 
-      if (missingParticipants.length === 0) return;
+      console.log('[ROOM] Handling remote users:', remoteIds);
 
-      console.log('[ROOM] Fetching missing data for remote users:', missingParticipants);
-
-      // Fetch participant data
-      for (const uid of missingParticipants) {
-        const { data, error } = await supabase
+      try {
+        // First, get participant data for all remote users
+        const { data: participantData, error: participantError } = await supabase
           .from('room_participants')
           .select('*')
           .eq('room_id', roomId)
-          .eq('user_id', uid)
-          .single();
+          .in('user_id', remoteIds);
 
-        if (error) {
-          console.error('[ROOM] Error fetching participant:', error);
-        } else if (data) {
-          console.log('[ROOM] Got participant data:', data);
-          setParticipants(prev => [...prev, data]);
+        if (participantError) {
+          console.error('[ROOM] Error fetching participants:', participantError);
+          return;
         }
 
-        // Fetch profile if needed
-        if (!profiles[uid]) {
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, full_name, avatar_url, bio')
-            .eq('id', uid)
-            .single();
-
-          if (profileError) {
-            console.error('[ROOM] Error fetching profile:', profileError);
-          } else if (profile) {
-            console.log('[ROOM] Got profile data:', profile);
-            setProfiles(prev => ({
-              ...prev,
-              [uid]: profile
-            }));
-          }
+        if (participantData) {
+          console.log('[ROOM] Got participant data:', participantData);
+          // Update participants, preserving existing ones
+          setParticipants(prev => {
+            const existing = prev.filter(p => !remoteIds.includes(p.user_id));
+            return [...existing, ...participantData];
+          });
         }
+
+        // Then, get profiles for all remote users
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .in('id', remoteIds);
+
+        if (profileError) {
+          console.error('[ROOM] Error fetching profiles:', profileError);
+          return;
+        }
+
+        if (profileData) {
+          console.log('[ROOM] Got profile data:', profileData);
+          const profileMap = profileData.reduce((acc, profile) => ({
+            ...acc,
+            [profile.id]: profile
+          }), {});
+          
+          setProfiles(prev => ({
+            ...prev,
+            ...profileMap
+          }));
+        }
+      } catch (error) {
+        console.error('[ROOM] Error handling remote users:', error);
       }
     };
 
-    fetchMissingData();
-  }, [remoteUsers, participantMap, profiles, roomId]);
+    handleRemoteUser();
+  }, [remoteUsers]); // Only depend on remoteUsers to ensure immediate updates
 
   // Get participant for a slot
   const getSlotParticipant = useCallback((slot: { id: string; index: number }) => {
@@ -337,7 +347,6 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       
       if (remoteUser) {
         const uid = String(remoteUser.uid);
-        // Return what we have, the effect above will handle fetching missing data
         return participantMap[uid] || {
           user_id: uid,
           joined_at: new Date().toISOString()
