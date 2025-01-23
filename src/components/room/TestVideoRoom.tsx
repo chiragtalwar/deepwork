@@ -199,7 +199,70 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     };
   }, [roomId, user?.id]);
 
-  // Single effect to handle remote users and their data
+  // Subscribe to Agora client events for immediate user updates
+  useEffect(() => {
+    if (!client) return;
+
+    const handleUserJoined = async (user: any) => {
+      console.log('[ROOM] Agora user joined:', user);
+      const remoteId = String(user.uid);
+      
+      // Immediately update participants
+      setParticipants(prev => {
+        const existingIds = new Set(prev.map(p => p.user_id));
+        if (existingIds.has(remoteId)) return prev;
+        
+        console.log('[ROOM] Adding new participant immediately:', remoteId);
+        return [...prev, {
+          user_id: remoteId,
+          room_id: roomId,
+          joined_at: new Date().toISOString(),
+          isTemporary: true
+        }];
+      });
+
+      // Immediately fetch and update profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, bio')
+        .eq('id', remoteId)
+        .single();
+
+      if (profile) {
+        console.log('[ROOM] Setting profile immediately:', profile);
+        setProfiles(prev => ({
+          ...prev,
+          [remoteId]: profile
+        }));
+      }
+
+      // Then sync with database
+      const { data: existingParticipant } = await supabase
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('user_id', remoteId)
+        .single();
+
+      if (!existingParticipant) {
+        await supabase
+          .from('room_participants')
+          .insert([{
+            user_id: remoteId,
+            room_id: roomId,
+            joined_at: new Date().toISOString()
+          }]);
+      }
+    };
+
+    client.on('user-joined', handleUserJoined);
+    
+    return () => {
+      client.off('user-joined', handleUserJoined);
+    };
+  }, [client, roomId]);
+
+  // Modify existing remote users effect to handle updates
   useEffect(() => {
     const handleRemoteUser = async () => {
       const remoteIds = remoteUsers.map(user => String(user.uid));
@@ -207,88 +270,45 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
       
       if (remoteIds.length === 0) return;
 
-      // STEP 1: Immediately update UI with remote users
-      setParticipants(prev => {
-        const existingIds = new Set(prev.map(p => p.user_id));
-        const newParticipants = remoteIds
-          .filter(id => !existingIds.has(id))
-          .map(uid => ({
-            user_id: uid,
-            room_id: roomId,
-            joined_at: new Date().toISOString(),
-            // Add a flag to identify temporary entries
-            isTemporary: true
-          }));
-
-        if (newParticipants.length === 0) return prev;
-        console.log('[ROOM] Adding temporary participants:', newParticipants);
-        return [...prev, ...newParticipants];
-      });
-
       try {
-        // STEP 2: Fetch existing profiles immediately for UI
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, bio')
-          .in('id', remoteIds);
-
-        if (profileData) {
-          console.log('[ROOM] Fetched profiles:', profileData);
-          const newProfiles = profileData.reduce((acc, profile) => ({
-            ...acc,
-            [profile.id]: profile
-          }), {});
-          
-          setProfiles(prev => ({
-            ...prev,
-            ...newProfiles
-          }));
-        }
-
-        // STEP 3: Sync with database
-        const promises = remoteIds.map(async uid => {
-          const { data: existingParticipant } = await supabase
-            .from('room_participants')
-            .select('*')
-            .eq('room_id', roomId)
-            .eq('user_id', uid)
-            .single();
-
-          if (!existingParticipant) {
-            return supabase
-              .from('room_participants')
-              .insert([{
-                user_id: uid,
-                room_id: roomId,
-                joined_at: new Date().toISOString()
-              }])
-              .single();
-          }
-          return { data: existingParticipant };
-        });
-
-        // Wait for all database operations to complete
-        await Promise.all(promises);
-
-        // STEP 4: Final fetch to ensure consistency
-        const { data: finalParticipants, error: participantsError } = await supabase
+        // Fetch final state to ensure consistency
+        const { data: finalParticipants } = await supabase
           .from('room_participants')
           .select('*')
           .eq('room_id', roomId);
 
         if (finalParticipants) {
-          console.log('[ROOM] Final participants:', finalParticipants);
+          console.log('[ROOM] Syncing final participants:', finalParticipants);
           setParticipants(finalParticipants);
         }
 
+        // Ensure we have all profiles
+        const missingProfileIds = remoteIds.filter(id => !profiles[id]);
+        if (missingProfileIds.length > 0) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, bio')
+            .in('id', missingProfileIds);
+
+          if (profileData) {
+            const newProfiles = profileData.reduce((acc, profile) => ({
+              ...acc,
+              [profile.id]: profile
+            }), {});
+            
+            setProfiles(prev => ({
+              ...prev,
+              ...newProfiles
+            }));
+          }
+        }
       } catch (error) {
         console.error('[ROOM] Error in handleRemoteUser:', error);
       }
     };
 
-    // Call immediately when remoteUsers changes
     handleRemoteUser();
-  }, [remoteUsers, roomId]);
+  }, [remoteUsers, roomId, profiles]);
 
   // Add immediate debug logging for state changes
   useEffect(() => {
