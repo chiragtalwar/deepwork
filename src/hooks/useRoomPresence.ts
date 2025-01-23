@@ -43,8 +43,8 @@ export function useRoomPresence(roomId: string) {
           console.log('[PRESENCE] Removing user from room:', { userId: user.id, roomId });
           
           const { error: deleteError } = await supabase
-            .from('room_participants')
-            .delete()
+          .from('room_participants')
+          .delete()
             .match({
               room_id: roomId,
               user_id: user.id
