@@ -204,12 +204,49 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
     const handleRemoteUser = async () => {
       // Get all remote user IDs that we need data for
       const remoteIds = remoteUsers.map(user => String(user.uid));
+      
+      // Immediately update participants with remote users to ensure UI updates
+      setParticipants(prev => {
+        const existingIds = new Set(prev.map(p => p.user_id));
+        const newRemoteParticipants = remoteIds
+          .filter(id => !existingIds.has(id))
+          .map(uid => ({
+            user_id: uid,
+            room_id: roomId,
+            joined_at: new Date().toISOString()
+          }));
+        
+        if (newRemoteParticipants.length === 0) return prev;
+        return [...prev, ...newRemoteParticipants];
+      });
+
       if (remoteIds.length === 0) return;
 
       console.log('[ROOM] Handling remote users:', remoteIds);
 
       try {
-        // First, get participant data for all remote users
+        // Fetch profiles first for immediate UI update
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .in('id', remoteIds);
+
+        if (profileError) {
+          console.error('[ROOM] Error fetching profiles:', profileError);
+        } else if (profileData) {
+          // Immediately update profiles
+          const newProfiles = profileData.reduce((acc, profile) => ({
+            ...acc,
+            [profile.id]: profile
+          }), {});
+          
+          setProfiles(prev => ({
+            ...prev,
+            ...newProfiles
+          }));
+        }
+
+        // Then fetch participant data to ensure database consistency
         const { data: participantData, error: participantError } = await supabase
           .from('room_participants')
           .select('*')
@@ -221,63 +258,21 @@ export function TestVideoRoom({ roomId = TEST_ROOM_ID }: TestVideoRoomProps) {
           return;
         }
 
-        // If we don't get participant data, create temporary ones
-        const effectiveParticipants = participantData || remoteIds.map(uid => ({
-          user_id: uid,
-          room_id: roomId,
-          joined_at: new Date().toISOString()
-        }));
-
-        console.log('[ROOM] Setting participants:', effectiveParticipants);
-        
-        // Update participants, preserving existing ones
-        setParticipants(prev => {
-          const existing = prev.filter(p => !remoteIds.includes(p.user_id));
-          return [...existing, ...effectiveParticipants];
-        });
-
-        // Then, get profiles for all remote users
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, full_name, avatar_url, bio')
-          .in('id', remoteIds);
-
-        if (profileError) {
-          console.error('[ROOM] Error fetching profiles:', profileError);
-          return;
-        }
-
-        // If we don't get profile data, create temporary ones
-        const effectiveProfiles = profileData || remoteIds.map(uid => ({
-          id: uid,
-          full_name: 'Loading...',
-          avatar_url: null,
-          bio: 'Loading...'
-        }));
-
-        console.log('[ROOM] Setting profiles:', effectiveProfiles);
-        
-        const profileMap = effectiveProfiles.reduce((acc, profile) => ({
-          ...acc,
-          [profile.id]: profile
-        }), {});
-        
-        setProfiles(prev => ({
-          ...prev,
-          ...profileMap
-        }));
-
-        // If we created temporary data, trigger a refetch after a short delay
-        if (!participantData || !profileData) {
-          setTimeout(handleRemoteUser, 1000);
+        if (participantData) {
+          setParticipants(prev => {
+            const existingIds = new Set(prev.map(p => p.user_id).filter(id => !remoteIds.includes(id)));
+            const updatedParticipants = [...prev.filter(p => existingIds.has(p.user_id)), ...participantData];
+            return updatedParticipants;
+          });
         }
       } catch (error) {
-        console.error('[ROOM] Error handling remote users:', error);
+        console.error('[ROOM] Error in handleRemoteUser:', error);
       }
     };
 
+    // Call immediately when remoteUsers changes
     handleRemoteUser();
-  }, [remoteUsers, roomId]); // Added roomId to dependencies
+  }, [remoteUsers, roomId]);
 
   // Remove the separate profile fetching effect as it's now handled in handleRemoteUser
   useEffect(() => {
