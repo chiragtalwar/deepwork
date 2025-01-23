@@ -63,31 +63,18 @@ export function Room() {
     try {
       // 1. Update user stats first
       if (user?.id && roomData?.duration) {
-        // First get ALL stats for this user to calculate proper totals
-        const { data: allUserStats, error: statsError } = await supabase
+        // Get current stats for this user
+        const { data: currentStats, error: statsError } = await supabase
           .from('user_stats')
           .select('*')
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+          .single();
 
-        if (statsError) {
+        if (statsError && statsError.code !== 'PGRST116') { // PGRST116 is "not found"
           console.error('Error fetching user stats:', statsError);
         }
 
-        // Calculate total weekly focus minutes from all sessions this week
         const now = new Date();
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay()); // Start of current week
-        
-        const weeklyMinutes = (allUserStats || [])
-          .filter(stat => {
-            const statDate = new Date(stat.created_at);
-            return statDate >= startOfWeek;
-          })
-          .reduce((sum, stat) => sum + (stat.weekly_focus_minutes || 0), 0);
-
-        // Get the most recent stats for other calculations
-        const currentStats = allUserStats?.[0] || null;
         const lastSessionDate = currentStats?.last_session_date ? new Date(currentStats.last_session_date) : null;
         
         // Check if it's a consecutive day
@@ -95,19 +82,34 @@ export function Room() {
           now.toISOString().split('T')[0] !== lastSessionDate.toISOString().split('T')[0] && 
           Math.abs(now.getTime() - lastSessionDate.getTime()) <= 48 * 60 * 60 * 1000;
 
+        // Calculate weekly focus minutes
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay()); // Start of current week
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        let weeklyMinutes = roomData.duration; // Start with current session
+        if (currentStats?.last_session_date) {
+          const lastSessionInCurrentWeek = new Date(currentStats.last_session_date) >= startOfWeek;
+          if (lastSessionInCurrentWeek) {
+            weeklyMinutes += currentStats.weekly_focus_minutes;
+          }
+        }
+
         const newStats = {
           user_id: user.id,
           total_sessions: (currentStats?.total_sessions || 0) + 1,
-          weekly_focus_minutes: weeklyMinutes + roomData.duration, // Add current session minutes
+          weekly_focus_minutes: weeklyMinutes,
           current_streak: isConsecutiveDay ? (currentStats?.current_streak || 0) + 1 : 1,
-          last_session_date: now.toISOString(),
+          last_session_date: now.toISOString()
         };
 
-        // Upsert the stats - this will update if exists, create if not
+        // Upsert the stats - this will create or update based on user_id
         const { error: upsertError } = await supabase
           .from('user_stats')
-          .upsert(newStats)
-          .eq('user_id', user.id); // Ensure we update the existing row
+          .upsert(newStats, {
+            onConflict: 'user_id',
+            ignoreDuplicates: false
+          });
 
         if (upsertError) {
           console.error('Error updating user stats:', upsertError);
@@ -133,10 +135,8 @@ export function Room() {
         },
         replace: true
       });
-    } catch (error) {
-      console.error('Error in handleSessionComplete:', error);
-      // Still navigate away even if cleanup fails
-      navigate('/rooms', { replace: true });
+    } catch (err) {
+      console.error('Error in handleSessionComplete:', err);
     }
   };
 

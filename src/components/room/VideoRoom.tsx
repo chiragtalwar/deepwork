@@ -58,6 +58,67 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
   // Use the improved useUserStats hook
   const { stats: userStats } = useUserStats(userIds);
 
+  // Add initial user data when component mounts
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const addInitialUser = async () => {
+      try {
+        // Add current user to participants if not already present
+        setParticipants(prev => {
+          const existingIds = new Set(prev.map(p => p.user_id));
+          if (existingIds.has(user.id)) return prev;
+
+          console.log('[ROOM] Adding initial user:', user.id);
+          return [...prev, {
+            user_id: user.id,
+            room_id: roomId,
+            joined_at: new Date().toISOString()
+          }];
+        });
+
+        // Fetch and set current user's profile
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, bio')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('[ROOM] Error fetching user profile:', profileError);
+        } else if (profile) {
+          console.log('[ROOM] Setting initial user profile:', profile);
+          setProfiles(prev => ({
+            ...prev,
+            [user.id]: profile
+          }));
+        }
+
+        // Add to room_participants if not already present
+        const { data: existingParticipant } = await supabase
+          .from('room_participants')
+          .select('*')
+          .eq('room_id', roomId)
+          .eq('user_id', user.id)
+          .single();
+
+        if (!existingParticipant) {
+          await supabase
+            .from('room_participants')
+            .insert([{
+              user_id: user.id,
+              room_id: roomId,
+              joined_at: new Date().toISOString()
+            }]);
+        }
+      } catch (error) {
+        console.error('[ROOM] Error adding initial user:', error);
+      }
+    };
+
+    addInitialUser();
+  }, [user?.id, roomId]);
+
   // Add debug logging for stats updates
   useEffect(() => {
     console.log('[ROOM] Current stats:', userStats);
