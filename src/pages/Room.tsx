@@ -108,17 +108,7 @@ export function Room() {
         console.error('Error cleaning up room participants:', participantsError);
       }
 
-      // 3. Update room status to completed
-      const { error: roomError } = await supabase
-        .from('rooms')
-        .update({ status: 'completed' })
-        .eq('id', roomId);
-
-      if (roomError) {
-        console.error('Error updating room status:', roomError);
-      }
-
-      // 4. Leave the room and navigate to rooms page with celebration state
+      // 3. Leave the room and navigate to rooms page with celebration state
       leaveRoom();
       navigate('/rooms', {
         state: {
