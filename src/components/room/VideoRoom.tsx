@@ -83,12 +83,12 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
         const { data: initialParticipants, error: participantsError } = await supabase
           .from('room_participants')
           .select('*')
-          .eq('room_id', roomId);
+        .eq('room_id', roomId);
 
         if (participantsError) {
           console.error('[ROOM] Error fetching participants:', participantsError);
-          return;
-        }
+        return;
+      }
 
         if (initialParticipants && isSubscribed) {
           console.log('[ROOM] Initial participants:', initialParticipants);
@@ -97,8 +97,8 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
           // Fetch profiles for all participants
           const participantIds = initialParticipants.map(p => p.user_id);
           if (participantIds.length > 0) {
-            const { data: profiles, error: profilesError } = await supabase
-              .from('profiles')
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
               .select('id, full_name, avatar_url, bio')
               .in('id', participantIds);
 
@@ -116,11 +116,11 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
               }));
             }
           }
-        }
-      } catch (error) {
-        console.error('[ROOM] Error in fetchInitialData:', error);
       }
-    };
+    } catch (error) {
+        console.error('[ROOM] Error in fetchInitialData:', error);
+    }
+  };
 
     fetchInitialData();
 
@@ -200,15 +200,15 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
       try {
         // First, get participant data for all remote users
         const { data: participantData, error: participantError } = await supabase
-          .from('room_participants')
-          .select('*')
-          .eq('room_id', roomId)
+        .from('room_participants')
+        .select('*')
+        .eq('room_id', roomId)
           .in('user_id', remoteIds);
 
         if (participantError) {
           console.error('[ROOM] Error fetching participants:', participantError);
-          return;
-        }
+        return;
+      }
 
         // If we don't get participant data, create temporary ones
         const effectiveParticipants = participantData || remoteIds.map(uid => ({
@@ -233,8 +233,8 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
 
         if (profileError) {
           console.error('[ROOM] Error fetching profiles:', profileError);
-          return;
-        }
+        return;
+      }
 
         // If we don't get profile data, create temporary ones
         const effectiveProfiles = profileData || remoteIds.map(uid => ({
@@ -260,7 +260,7 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
         if (!participantData || !profileData) {
           setTimeout(handleRemoteUser, 1000);
         }
-      } catch (error) {
+    } catch (error) {
         console.error('[ROOM] Error handling remote users:', error);
       }
     };
@@ -369,8 +369,8 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
       // 2. Remove from room_participants
       if (user?.id) {
         const { error: deleteError } = await supabase
-          .from('room_participants')
-          .delete()
+        .from('room_participants')
+        .delete()
           .match({
             room_id: roomId,
             user_id: user.id
@@ -447,7 +447,7 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
         
         {/* Main content */}
         <div className="relative z-10 h-screen flex flex-col p-6">
-          {/* Header */}
+      {/* Header */}
           <div className="flex justify-between items-start">
             {/* Left: Title */}
             <div>
@@ -485,7 +485,7 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
                 <div className="relative mr-1 mt-20">
                   <div className="space-y-1.3">
                     <p className="text-blue-50/90 text-sm font-medium">
-                      Welcome <span className="text-white">*Members*</span>
+                      Welcome to the <span className="text-white">Focuso Club</span>
                     </p>
                     <p className="text-blue-50/80 text-sm">
                       No introductions needed—just relax!
@@ -520,7 +520,7 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
                   
                 return (
                   <div key={slot.id} className="group bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 shadow-xl">
-                    <div className="aspect-video bg-black/40 relative">
+                <div className="aspect-video bg-black/40 relative">
                       {/* Video Container */}
                       <div 
                         id={slot.id}
@@ -534,36 +534,36 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
                           <div className="flex flex-col items-center">
                             <Icons.users className="w-8 h-8 text-white/20 mb-2" />
                             <p className="text-white/40 text-sm">Empty Seat</p>
-                          </div>
-                        </div>
-                      )}
+                    </div>
+                  </div>
+                )}
 
                       {/* Video Controls for Current User */}
                       {isCurrentUser && (
-                        <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300">
-                          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
+                  <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300">
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
                             <button
                               className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center"
-                              onClick={handleVideoToggle}
-                            >
+                      onClick={handleVideoToggle}
+                    >
                               {isVideoEnabled ? (
                                 <Icons.video className="h-5 w-5 text-white" />
                               ) : (
-                                <Icons.videoOff className="h-5 w-5 text-red-400" />
+                        <Icons.videoOff className="h-5 w-5 text-red-400" />
                               )}
                             </button>
                             <button
                               className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center"
-                              onClick={handleAudioToggle}
-                            >
+                      onClick={handleAudioToggle}
+                    >
                               {isAudioEnabled ? (
                                 <Icons.mic className="h-5 w-5 text-white" />
                               ) : (
-                                <Icons.micOff className="h-5 w-5 text-red-400" />
+                        <Icons.micOff className="h-5 w-5 text-red-400" />
                               )}
                             </button>
-                          </div>
-                        </div>
+                  </div>
+                </div>
                       )}
 
                       {/* Participant Info Overlay */}
@@ -576,13 +576,13 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
                               ) : (
                                 <span className="text-sky-300 text-xs font-medium">
                                   {profile.full_name?.[0] || '?'}
-                                </span>
+                      </span>
                               )}
-                            </div>
+                    </div>
                             <span className="text-sm text-white/90 font-medium">{profile.full_name}</span>
                             {isCurrentUser && <span className="text-xs text-sky-300/70">(You)</span>}
-                          </div>
-                        </div>
+                    </div>
+                  </div>
                       )}
                     </div>
 
@@ -591,23 +591,23 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
                       {participant && profile ? (
                         <div className="space-y-3">
                           {/* Bio */}
-                          <div className="bg-black/20 rounded-lg p-3">
-                            <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
-                            <p className="text-white/90 text-sm line-clamp-2">
+                        <div className="bg-black/20 rounded-lg p-3">
+                          <p className="text-white/60 text-xs font-medium mb-1">Bio</p>
+                          <p className="text-white/90 text-sm line-clamp-2">
                               {profile.bio || 'No bio added yet'}
-                            </p>
-                          </div>
+                          </p>
+                        </div>
 
                           {/* Deep Work Hours */}
-                          <div className="bg-black/20 rounded-lg p-3">
+                        <div className="bg-black/20 rounded-lg p-3">
                             <p className="text-white/60 text-xs font-medium mb-1">Total Deep Work</p>
-                            <p className="text-white/90 text-sm">
+                          <p className="text-white/90 text-sm">
                               {stats ? formatHours(stats.weekly_focus_minutes) : '0h'} of focused work
-                            </p>
-                          </div>
+                          </p>
+                        </div>
 
                           {/* Current Focus */}
-                          <div className="bg-black/20 rounded-lg p-3">
+                        <div className="bg-black/20 rounded-lg p-3">
                             <p className="text-white/60 text-xs font-medium mb-1">Currently Focusing On</p>
                             {isCurrentUser ? (
                               <div className="flex gap-2 items-center">
@@ -632,25 +632,25 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
                                 </button>
                               </div>
                             ) : (
-                              <p className="text-white/90 text-sm">
-                                {participant.current_focus_task || 'Not specified'}
-                              </p>
+                          <p className="text-white/90 text-sm">
+                            {participant.current_focus_task || 'Not specified'}
+                          </p>
                             )}
                           </div>
                         </div>
                       ) : (
                         <>
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center border border-white/10">
-                              <Icons.user className="w-5 h-5 text-white/20" />
-                            </div>
-                            <div>
-                              <h3 className="text-white/40 font-medium">Available Spot</h3>
-                              <p className="text-white/30 text-sm">Waiting for participant...</p>
-                            </div>
-                          </div>
-                          <div className="bg-black/10 rounded-lg p-3">
-                            <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                        <Icons.user className="w-5 h-5 text-white/20" />
+                      </div>
+                      <div>
+                        <h3 className="text-white/40 font-medium">Available Spot</h3>
+                        <p className="text-white/30 text-sm">Waiting for participant...</p>
+                      </div>
+                    </div>
+                    <div className="bg-black/10 rounded-lg p-3">
+                      <p className="text-white/30 text-sm">Join this deep work session to focus together</p>
                           </div>
                         </>
                       )}
@@ -675,4 +675,4 @@ export function VideoRoom({ roomId, roomStartTime, onSessionComplete, duration }
       </div>
     </div>
   );
-}
+} 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Icons } from '../ui/icons';
 
 interface FocusProgressProps {
-  duration: number;
+  duration: number; // in minutes
   startTime: Date;
   onSessionComplete: () => void;
 }
@@ -19,11 +19,11 @@ export function FocusProgress({ duration, startTime, onSessionComplete }: FocusP
       const now = new Date();
       const startMs = startTime.getTime();
       const nowMs = now.getTime();
-      const durationMs = duration * 60 * 1000;
-      const elapsedMs = nowMs - startMs;
+      const durationMs = duration * 60 * 1000; // Convert minutes to milliseconds
+      const elapsedMs = Math.max(0, nowMs - startMs);
 
+      // Check if we're before the start time
       if (startMs > nowMs) {
-        // Session hasn't started yet
         setIsPreStart(true);
         setProgress(0);
         setFocusedTime(0);
@@ -31,31 +31,26 @@ export function FocusProgress({ duration, startTime, onSessionComplete }: FocusP
         return;
       }
 
-      // Session has started
       setIsPreStart(false);
 
-      if (elapsedMs >= durationMs) {
-        // Session is complete
-        setProgress(100);
-        setFocusedTime(duration);
-        setRemainingTime(0);
-        
-        // Trigger session complete once
-        if (!hasTriggeredComplete) {
-          setHasTriggeredComplete(true);
-          onSessionComplete();
-        }
-        return;
-      }
-
-      // Session is in progress
-      const currentProgress = (elapsedMs / durationMs) * 100;
-      const currentFocusedTime = Math.floor(elapsedMs / (1000 * 60));
-      const currentRemainingTime = Math.ceil((durationMs - elapsedMs) / (1000 * 60));
+      // Calculate progress percentage
+      const currentProgress = Math.min(100, (elapsedMs / durationMs) * 100);
+      
+      // Calculate focused time in minutes
+      const currentFocusedTime = Math.floor(elapsedMs / (60 * 1000));
+      
+      // Calculate remaining time in minutes
+      const currentRemainingTime = Math.max(0, duration - currentFocusedTime);
 
       setProgress(currentProgress);
       setFocusedTime(currentFocusedTime);
       setRemainingTime(currentRemainingTime);
+
+      // Check if session is complete
+      if (currentProgress >= 100 && !hasTriggeredComplete) {
+        setHasTriggeredComplete(true);
+        onSessionComplete();
+      }
     };
 
     // Update immediately and then every second
